@@ -1,0 +1,119 @@
+# Medical-Agent Configuration
+# 系统配置文件
+
+# 大模型配置
+# 注意：API 密钥等敏感信息请放入 .env 文件，不要提交到版本控制
+# 参考 .env.example 模板文件
+#
+# 环境变量：
+# - DASHSCOPE_API_KEY, DASHSCOPE_MODEL, DASHSCOPE_TEMPERATURE, DASHSCOPE_MAX_TOKENS
+# - OPENAI_API_KEY, OPENAI_MODEL, OPENAI_API_BASE
+# - DEEPSEEK_API_KEY, DEEPSEEK_MODEL, DEEPSEEK_API_BASE
+llm:
+  provider: dashscope  # dashscope | openai | deepseek
+  model: tongyi-xiaomi-analysis-pro  # 仅当环境变量未设置时使用
+  api_base: https://dashscope.aliyuncs.com/compatible-mode/v1
+  temperature: 0.1  # 医疗应用需要低温度
+  max_tokens: 2000  # DashScope 限制：1-2000
+  timeout: 60
+
+# Agent 配置
+agents:
+  history_collector:
+    enabled: true
+    active_questioning: true  # 启用主动提问机制
+    max_followup_questions: 5
+    rare_disease_screening: true
+  
+  lab_interpreter:
+    enabled: true
+    enable_rare_disease_screening: true
+    critical_value_alert: true
+    calculate_scores:
+      - FIB4
+      - Child_Pugh
+      - MELD
+  
+  imaging_analyzer:
+    enabled: true
+    supported_modalities:
+      - ultrasound
+      - ct
+      - mri
+  
+  knowledge_retriever:
+    enabled: true
+    sources:
+      - guidelines  # 诊疗指南
+      - orphanet    # 罕见病数据库
+      - omim        # 遗传病数据库
+      - uptodate    # 临床参考
+    max_results: 5
+  
+  diagnostic_reasoner:
+    enabled: true
+    max_differential_diagnoses: 5
+    confidence_threshold: 0.6
+  
+  referral_decider:
+    enabled: true
+    referral_thresholds:
+      emergency: 0.95  # 急诊转诊
+      urgent: 0.8      # 紧急转诊
+      routine: 0.5     # 常规转诊
+
+# 中央协调器配置
+coordinator:
+  enable_reflection: true  # 启用自我反思引擎
+  reflection_rounds: 2     # 反思轮数
+  enable_evidence_chain: true  # 启用可溯源证据链
+  timeout_seconds: 300     # 单次诊断超时
+
+# 数据库配置
+database:
+  postgresql:
+    host: localhost
+    port: 5432
+    database: medical_agent
+    user: ${DB_USER}
+    password: ${DB_PASSWORD}
+  
+  redis:
+    host: localhost
+    port: 6379
+    db: 0
+    password: ${REDIS_PASSWORD}
+  
+  milvus:
+    host: localhost
+    port: 19530
+    collection_name: medical_knowledge
+
+# API 配置
+api:
+  host: 0.0.0.0
+  port: 8000
+  debug: false
+  cors_origins:
+    - http://localhost:3000
+    - http://localhost:8080
+  rate_limit:
+    requests_per_minute: 60
+    requests_per_day: 1000
+
+# 日志配置
+logging:
+  level: INFO  # DEBUG | INFO | WARNING | ERROR
+  format: "{time:YYYY-MM-DD HH:mm:ss} | {level} | {module} | {message}"
+  file: logs/medical_agent.log
+  rotation: 100 MB
+  retention: 30 days
+
+# 安全配置
+security:
+  api_key_header: X-API-Key
+  jwt_secret: ${JWT_SECRET}
+  token_expire_minutes: 1440
+
+# 部署环境
+environment: development  # development | production

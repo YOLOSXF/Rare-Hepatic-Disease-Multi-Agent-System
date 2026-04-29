@@ -1,0 +1,316 @@
+# 常见病规则库
+# 规则格式：field（字段路径）、operator（运算符）、value（阈值）、score（命中得分）
+# 支持热更新：修改此文件后无需重启，下次请求自动生效
+#
+# 规则分层策略：
+#   core_rules      - 必须满足的核心条件（金标准），一票否决/缺项挂起
+#   supporting_rules - 支持条件，满足即加分，用于区分疾病亚型和置信度
+
+version: "1.1.0"
+last_updated: "2026-04-18"
+
+
+# ==================== 代谢相关脂肪性肝病 (MASLD) ====================
+fatty_liver:
+  name: "代谢相关脂肪性肝病 (MASLD)"
+  category: "common"
+  description: "基于 BMI、超声表现、肝功能模式的综合判断"
+  
+  # 核心规则：超声提示脂肪肝是诊断金标准
+  core_rules:
+    - field: "ultrasound.findings"
+      operator: "contains"
+      value: "脂肪肝"
+      required: true
+      note: "超声提示脂肪肝是MASLD诊断的必要条件"
+  
+  # 支持规则：用于评估严重程度和置信度
+  supporting_rules:
+    - field: "bmi"
+      operator: ">="
+      value: 28
+      score: 0.3
+    
+    - field: "bmi"
+      operator: ">="
+      value: 24
+      score: 0.15
+    
+    - field: "ultrasound.findings"
+      operator: "contains"
+      value: "肝回声增强"
+      score: 0.35
+    
+    - field: "ultrasound.findings"
+      operator: "contains"
+      value: "肝肾回声比值增加"
+      score: 0.25
+    
+    - field: "labs.ALT"
+      operator: ">"
+      value: 40
+      score: 0.1
+    
+    - field: "labs.AST"
+      operator: ">"
+      value: 40
+      score: 0.1
+    
+    - field: "labs.ALT"
+      operator: ">"
+      value: 80
+      score: 0.15
+    
+    - field: "history.alcohol_intake_weekly"
+      operator: "<"
+      value: 140  # 每周酒精摄入<140g
+      score: 0.1
+      note: "排除酒精性肝病，支持MASLD诊断"
+  
+  thresholds:
+    high_confidence: 0.7
+    medium_confidence: 0.4
+    low_confidence: 0.2
+  
+  output:
+    diagnosis: "代谢相关脂肪性肝病 (MASLD)"
+    icd10: "K76.0"
+    referral: "基层随访"
+    followup: "3-6 个月复查肝功能、超声"
+
+
+# ==================== 酒精性肝病 (ALD) ====================
+alcoholic_liver_disease:
+  name: "酒精性肝病 (ALD)"
+  category: "common"
+  description: "基于饮酒史、AST/ALT 比值、GGT 升高"
+  
+  # 核心规则：显著饮酒史是诊断 ALD 的绝对必要条件
+  core_rules:
+    - field: "history.alcohol_intake_weekly"
+      operator: ">="
+      value: 140  # 男性每周≥140g 酒精
+      required: true
+      note: "显著饮酒史是ALD诊断的必要条件（每周≥140g酒精）"
+  
+  # 支持规则：用于区分酒精性肝炎/肝硬化等
+  supporting_rules:
+    - field: "history.alcohol_intake_weekly"
+      operator: ">="
+      value: 280
+      score: 0.5
+    
+    - field: "history.drinking_years"
+      operator: ">="
+      value: 5
+      score: 0.2
+    
+    - field: "labs.AST"
+      operator: ">"
+      value: 40
+      score: 0.15
+    
+    - field: "labs.ALT"
+      operator: ">"
+      value: 40
+      score: 0.1
+    
+    - field: "labs.AST_ALT_ratio"
+      operator: ">="
+      value: 2.0
+      score: 0.35
+      note: "AST/ALT≥2 是酒精性肝病特征"
+    
+    - field: "labs.GGT"
+      operator: ">"
+      value: 60
+      score: 0.2
+    
+    - field: "labs.MCV"
+      operator: ">"
+      value: 100
+      score: 0.15
+      note: "大细胞性贫血提示长期饮酒"
+  
+  thresholds:
+    high_confidence: 0.7
+    medium_confidence: 0.4
+    low_confidence: 0.2
+  
+  output:
+    diagnosis: "酒精性肝病 (ALD)"
+    icd10: "K70.9"
+    referral: "戒酒门诊 + 肝病科随访"
+    followup: "戒酒 4 周后复查肝功能"
+
+
+# ==================== 药物性肝损伤 (DILI) ====================
+dili:
+  name: "药物性肝损伤 (DILI)"
+  category: "common"
+  description: "基于用药史、R 值计算、排除其他病因"
+  
+  # 核心规则：可疑用药史是诊断 DILI 的绝对前提
+  core_rules:
+    - field: "history.medication_history"
+      operator: "has_recent_medication"
+      value: true
+      required: true
+      note: "近 3 个月内有可疑用药史是DILI诊断的必要条件"
+  
+  # 支持规则：用于评估肝损伤类型和严重程度
+  supporting_rules:
+    - field: "history.has_recent_hepatotoxic_medication"
+      operator: "=="
+      value: true
+      score: 0.2
+      note: "近90天内是否有明确的损肝药物服用史"
+    
+    - field: "labs.ALT"
+      operator: ">"
+      value: 80  # >2xULN
+      score: 0.2
+    
+    - field: "labs.ALP"
+      operator: ">"
+      value: 150  # >1xULN
+      score: 0.15
+    
+    - field: "r_value"
+      operator: ">="
+      value: 5
+      score: 0.15
+      note: "R=(ALT/40)/(ALP/150)，≥5 为肝细胞型"
+    
+    - field: "history.viral_hepatitis"
+      operator: "=="
+      value: false
+      score: 0.1
+      note: "排除病毒性肝炎"
+  
+  high_risk_medications:
+    - "抗结核药：异烟肼、利福平、吡嗪酰胺"
+    - "抗癫痫药：丙戊酸、卡马西平、苯妥英"
+    - "抗生素：阿莫西林克拉维酸钾、红霉素"
+    - "中草药：何首乌、土三七、雷公藤"
+    - "解热镇痛药：对乙酰氨基酚、布洛芬"
+    - "降脂药：他汀类"
+    - "抗甲状腺药：甲巯咪唑、丙硫氧嘧啶"
+  
+  thresholds:
+    high_confidence: 0.7
+    medium_confidence: 0.45
+    low_confidence: 0.25
+  
+  output:
+    diagnosis: "药物性肝损伤 (DILI)"
+    icd10: "K71.9"
+    referral: "停用可疑药物 + 肝病科就诊"
+    followup: "每周复查肝功能直至恢复"
+
+
+# ==================== 慢性乙型肝炎 ====================
+chronic_hepatitis_b:
+  name: "慢性乙型肝炎"
+  category: "common"
+  description: "基于乙肝血清学标志物、HBV DNA、肝功能"
+  
+  # 核心规则：HBsAg 阳性是确诊乙肝的绝对金标准
+  core_rules:
+    - field: "labs.HBsAg"
+      operator: "=="
+      value: "positive"
+      required: true
+      note: "HBsAg 阳性是确诊乙肝的绝对必要条件（金标准）"
+  
+  # 支持规则：用于评估活动性和传染性
+  supporting_rules:
+    - field: "labs.HBeAg"
+      operator: "=="
+      value: "positive"
+      score: 0.15
+    
+    - field: "labs.HBV_DNA"
+      operator: ">"
+      value: 2000  # IU/mL
+      score: 0.2
+    
+    - field: "labs.ALT"
+      operator: ">"
+      value: 40
+      score: 0.15
+    
+    - field: "labs.ALT"
+      operator: ">"
+      value: 80
+      score: 0.2
+    
+    - field: "history.hepatitis_b_duration"
+      operator: ">="
+      value: 180  # 6 个月以上
+      score: 0.1
+  
+  thresholds:
+    high_confidence: 0.7
+    medium_confidence: 0.4
+    low_confidence: 0.2
+  
+  output:
+    diagnosis: "慢性乙型肝炎"
+    icd10: "B18.1"
+    referral: "感染科/肝病科规范抗病毒治疗"
+    followup: "每 3-6 个月复查 HBV DNA、肝功能、AFP、超声"
+
+
+# ==================== 急性病毒性肝炎 ====================
+acute_viral_hepatitis:
+  name: "急性病毒性肝炎"
+  category: "common"
+  description: "基于急性起病、肝功能显著升高、病毒标志物"
+  
+  # 核心规则：至少一种急性病毒标志物阳性（甲肝或戊肝）
+  core_rules:
+    - field: "labs.anti_HAV_IgM"
+      operator: "=="
+      value: "positive"
+      required: false
+      note: "甲肝 IgM 阳性提示急性甲型肝炎"
+    
+    - field: "labs.anti_HEV_IgM"
+      operator: "=="
+      value: "positive"
+      required: false
+      note: "戊肝 IgM 阳性提示急性戊型肝炎"
+  
+  # 支持规则：用于评估严重程度
+  supporting_rules:
+    - field: "history.onset_days"
+      operator: "<="
+      value: 30
+      score: 0.2
+    
+    - field: "labs.ALT"
+      operator: ">"
+      value: 200  # >5xULN
+      score: 0.3
+    
+    - field: "labs.ALT"
+      operator: ">"
+      value: 500
+      score: 0.4
+    
+    - field: "labs.TBil"
+      operator: ">"
+      value: 34.2  # >2mg/dL
+      score: 0.2
+  
+  thresholds:
+    high_confidence: 0.7
+    medium_confidence: 0.4
+    low_confidence: 0.2
+  
+  output:
+    diagnosis: "急性病毒性肝炎"
+    icd10: "B17.9"
+    referral: "感染科隔离治疗"
+    followup: "卧床休息、保肝治疗，监测凝血功能"

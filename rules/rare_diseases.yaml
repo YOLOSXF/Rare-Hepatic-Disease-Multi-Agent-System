@@ -1,0 +1,481 @@
+# 罕见肝病规则库
+# 这些规则用于识别需要转诊到上级医院的罕见肝病患者
+# 命中罕见病规则后，触发 L3 深度诊断流程
+
+version: "1.0.0"
+last_updated: "2026-04-09"
+
+# ==================== Wilson 病（肝豆状核变性） ====================
+wilson_disease:
+  name: "Wilson 病（肝豆状核变性）"
+  category: "rare"
+  description: "铜代谢障碍遗传病，早期诊断可治愈"
+  urgency: "high"
+  
+  # 核心规则（必须满足）
+  core_rules:
+    # 铜蓝蛋白降低是确诊级指标（支持大小写不敏感匹配）
+    - field: "labs.ceruloplasmin"
+      operator: "<"
+      value: 0.20  # g/L = 20 mg/dL
+      required: true
+      note: "铜蓝蛋白降低是核心指标（支持字段名ceruloplasmin）"
+  
+  # 支持规则（满足越多置信度越高）
+  supporting_rules:
+    # 年龄作为支持规则而非核心规则
+    - field: "age"
+      operator: "<"
+      value: 40
+      score: 0.15
+      note: "发病年龄通常<40岁，但非绝对"
+    
+    - field: "age"
+      operator: "<"
+      value: 30
+      score: 0.25
+      note: "<30岁更典型"
+    
+    - field: "symptoms.tremor"
+      operator: "=="
+      value: true
+      score: 0.25
+    
+    - field: "symptoms.dysarthria"
+      operator: "=="
+      value: true
+      score: 0.2
+    
+    - field: "symptoms.behavioral_changes"
+      operator: "=="
+      value: true
+      score: 0.15
+    
+    - field: "eye_exam.kf_ring"
+      operator: "=="
+      value: "positive"
+      score: 0.35
+      note: "K-F 环是特征性体征"
+    
+    - field: "labs.urine_copper_24h"
+      operator: ">"
+      value: 100  # μg/24h
+      score: 0.3
+    
+    - field: "liver_pathology.copper_quantification"
+      operator: ">"
+      value: 250  # μg/g 干重
+      score: 0.25
+    
+    - field: "genetic_test.ATP7B_mutation"
+      operator: "=="
+      value: "positive"
+      score: 0.4
+      note: "基因检测确诊"
+    
+    # 排他性规则：排除典型脂肪肝
+    - field: "ultrasound.findings"
+      operator: "contains"
+      value: "重度脂肪肝"
+      score: -0.15
+      note: "典型脂肪肝表现降低Wilson病可能性"
+  
+  thresholds:
+    # 罕见病阈值：核心规则满足即认为可疑
+    high_confidence: 0.5
+    medium_confidence: 0.25
+    low_confidence: 0.15
+  
+  output:
+    diagnosis: "Wilson 病（疑似）"
+    icd10: "E83.0"
+    referral: "紧急转诊至三甲医院肝病中心"
+    urgency: "urgent"
+    recommended_tests:
+      - "血清铜蓝蛋白"
+      - "24 小时尿铜"
+      - "眼科裂隙灯检查（K-F 环）"
+      - "ATP7B 基因检测"
+      - "肝穿刺铜定量（必要时）"
+    treatment_hint: "驱铜治疗（青霉胺/曲恩汀）+ 低铜饮食"
+
+
+# ==================== 自身免疫性肝炎 ====================
+autoimmune_hepatitis:
+  name: "自身免疫性肝炎 (AIH)"
+  category: "rare"
+  description: "自身免疫介导的慢性肝炎，女性多见，需自身抗体阳性确诊"
+  urgency: "medium-high"
+  
+  # 核心规则：必须满足自身抗体阳性（AIH诊断的必要条件）
+  core_rules:
+    - field: "labs.ANA"
+      operator: "=="
+      value: "positive"
+      required: true
+      note: "ANA 阳性是AIH诊断的必要条件（1型）"
+    
+    - field: "labs.SMA"
+      operator: "=="
+      value: "positive"
+      required: false
+      note: "SMA 阳性支持1型AIH"
+    
+    - field: "labs.LKM1"
+      operator: "=="
+      value: "positive"
+      required: false
+      note: "LKM-1 阳性支持2型AIH"
+    
+    # 排他性规则：排除酒精性肝病
+    - field: "history.alcohol_intake_weekly"
+      operator: "<"
+      value: 140
+      required: true
+      note: "必须排除酒精性肝病（每周酒精摄入<140g）"
+  
+  supporting_rules:
+    - field: "gender"
+      operator: "=="
+      value: "female"
+      score: 0.15
+    
+    - field: "labs.IgG"
+      operator: ">"
+      value: 11.0  # g/L
+      score: 0.15
+      note: "IgG升高支持诊断，但非必需"
+    
+    - field: "labs.IgG"
+      operator: ">"
+      value: 15.0
+      score: 0.25
+    
+    - field: "history.autoimmune_disease"
+      operator: "=="
+      value: true
+      score: 0.2
+      note: "合并其他自身免疫病（甲状腺炎、类风湿等）"
+    
+    - field: "liver_biopsy.interface_hepatitis"
+      operator: "=="
+      value: "positive"
+      score: 0.3
+      note: "界面性肝炎是特征性病理改变"
+    
+    - field: "labs.ALT"
+      operator: ">"
+      value: 80
+      score: 0.1
+    
+    - field: "labs.AST"
+      operator: ">"
+      value: 80
+      score: 0.1
+  
+  thresholds:
+    high_confidence: 0.75
+    medium_confidence: 0.5
+    low_confidence: 0.3
+  
+  output:
+    diagnosis: "自身免疫性肝炎 (AIH, 疑似)"
+    icd10: "K75.4"
+    referral: "转诊至肝病专科完善自身抗体谱、肝穿刺"
+    urgency: "routine"
+    recommended_tests:
+      - "自身抗体谱（ANA、SMA、LKM-1、SLA/LP）"
+      - "免疫球蛋白（IgG、IgM、IgA）"
+      - "肝穿刺活检"
+      - "排除病毒性肝炎、药物性肝损伤"
+    treatment_hint: "糖皮质激素 + 硫唑嘌呤免疫抑制治疗"
+
+
+# ==================== 遗传性血色病 ====================
+hereditary_hemochromatosis:
+  name: "遗传性血色病"
+  category: "rare"
+  description: "铁过载遗传病，经典三联征：皮肤色素沉着 + 糖尿病 + 肝硬化"
+  urgency: "medium"
+  
+  core_rules:
+    - field: "labs.ferritin"
+      operator: ">"
+      value: 300  # ng/mL（男性）
+      required: true
+      note: "铁蛋白显著升高"
+    
+    - field: "labs.transferrin_saturation"
+      operator: ">"
+      value: 45  # %
+      required: true
+      note: "转铁蛋白饱和度升高"
+  
+  supporting_rules:
+    - field: "symptoms.skin_hyperpigmentation"
+      operator: "=="
+      value: true
+      score: 0.25
+      note: "皮肤青铜色色素沉着"
+    
+    - field: "history.diabetes"
+      operator: "=="
+      value: true
+      score: 0.2
+      note: "糖尿病（血色病性糖尿病）"
+    
+    - field: "symptoms.joint_pain"
+      operator: "=="
+      value: true
+      score: 0.15
+      note: "关节痛（第 2-3 掌指关节）"
+    
+    - field: "gender"
+      operator: "=="
+      value: "male"
+      score: 0.1
+      note: "男性多见"
+    
+    - field: "age"
+      operator: ">"
+      value: 40
+      score: 0.1
+    
+    - field: "genetic_test.HFE_mutation"
+      operator: "=="
+      value: "positive"
+      score: 0.35
+      note: "HFE 基因 C282Y 纯合突变"
+    
+    - field: "liver_MRI.iron_overload"
+      operator: "=="
+      value: "positive"
+      score: 0.25
+      note: "肝脏 MRI 显示铁沉积"
+  
+  thresholds:
+    high_confidence: 0.7
+    medium_confidence: 0.45
+    low_confidence: 0.25
+  
+  output:
+    diagnosis: "遗传性血色病（疑似）"
+    icd10: "E83.1"
+    referral: "转诊至肝病专科完善基因检测、肝脏 MRI"
+    urgency: "routine"
+    recommended_tests:
+      - "血清铁蛋白、转铁蛋白饱和度"
+      - "HFE 基因检测（C282Y、H63D）"
+      - "肝脏 MRI T2* 定量铁含量"
+      - "空腹血糖、糖化血红蛋白"
+    treatment_hint: "静脉放血治疗 + 去铁治疗"
+
+
+# ==================== 原发性胆汁性胆管炎 ====================
+pbc:
+  name: "原发性胆汁性胆管炎 (PBC)"
+  category: "rare"
+  description: "慢性胆汁淤积性肝病，中年女性多见"
+  urgency: "medium"
+  
+  core_rules:
+    - field: "labs.ALP"
+      operator: ">"
+      value: 150  # >1xULN
+      required: true
+      note: "碱性磷酸酶升高（胆汁淤积模式）"
+    
+    - field: "labs.AMA"
+      operator: "=="
+      value: "positive"
+      required: false
+      note: "AMA 阳性（95% 患者）"
+    
+    - field: "labs.AMA_M2"
+      operator: "=="
+      value: "positive"
+      required: false
+      note: "AMA-M2 阳性（特异性更高）"
+  
+  supporting_rules:
+    - field: "gender"
+      operator: "=="
+      value: "female"
+      score: 0.2
+      note: "女性占 90% 以上"
+    
+    - field: "age"
+      operator: ">"
+      value: 40
+      score: 0.1
+    
+    - field: "symptoms.pruritus"
+      operator: "=="
+      value: true
+      score: 0.25
+      note: "皮肤瘙痒（手掌足底明显，夜间加重）"
+    
+    - field: "labs.IgM"
+      operator: ">"
+      value: 2.5  # g/L
+      score: 0.2
+    
+    - field: "labs.GGT"
+      operator: ">"
+      value: 60
+      score: 0.15
+    
+    - field: "liver_biopsy.florid_duct_lesion"
+      operator: "=="
+      value: "positive"
+      score: 0.3
+      note: "非化脓性破坏性胆管炎"
+    
+    - field: "symptoms.fatigue"
+      operator: "=="
+      value: true
+      score: 0.1
+  
+  thresholds:
+    high_confidence: 0.8
+    medium_confidence: 0.55
+    low_confidence: 0.35
+  
+  output:
+    diagnosis: "原发性胆汁性胆管炎 (PBC, 疑似)"
+    icd10: "K74.3"
+    referral: "转诊至肝病专科完善自身抗体、肝穿刺"
+    urgency: "routine"
+    recommended_tests:
+      - "AMA、AMA-M2、抗 gp210、抗 Sp100"
+      - "免疫球蛋白（IgM 升高）"
+      - "肝脏超声/MRCP 排除胆道梗阻"
+      - "肝穿刺活检（必要时）"
+    treatment_hint: "熊去氧胆酸（UDCA）一线治疗"
+
+
+# ==================== α1-抗胰蛋白酶缺乏症 ====================
+alpha1_antitrypsin_deficiency:
+  name: "α1-抗胰蛋白酶缺乏症"
+  category: "rare"
+  description: "遗传性蛋白缺乏，可致肝硬化和肺气肿"
+  urgency: "medium"
+  
+  core_rules:
+    - field: "labs.alpha1_antitrypsin"
+      operator: "<"
+      value: 0.8  # g/L
+      required: true
+      note: "α1-抗胰蛋白酶水平降低"
+  
+  supporting_rules:
+    - field: "symptoms.early_onset_emphysema"
+      operator: "=="
+      value: true
+      score: 0.3
+      note: "早发肺气肿（<45 岁）"
+    
+    - field: "age"
+      operator: "<"
+      value: 50
+      score: 0.15
+    
+    - field: "liver_pathology.PAS_positive_globules"
+      operator: "=="
+      value: "positive"
+      score: 0.25
+      note: "肝细胞内 PAS 阳性球形包涵体"
+    
+    - field: "genetic_test.SERPINA1_mutation"
+      operator: "=="
+      value: "positive"
+      score: 0.35
+      note: "SERPINA1 基因 PiZZ 基因型"
+    
+    - field: "history.neonatal_jaundice"
+      operator: "=="
+      value: true
+      score: 0.2
+      note: "新生儿期黄疸延长"
+  
+  thresholds:
+    high_confidence: 0.75
+    medium_confidence: 0.5
+    low_confidence: 0.3
+  
+  output:
+    diagnosis: "α1-抗胰蛋白酶缺乏症（疑似）"
+    icd10: "E88.01"
+    referral: "转诊至肝病专科完善基因检测、肺功能"
+    urgency: "routine"
+    recommended_tests:
+      - "血清α1-抗胰蛋白酶水平"
+      - "SERPINA1 基因分型"
+      - "肺功能检查"
+      - "肝脏超声/弹性成像"
+    treatment_hint: "避免吸烟、α1-抗胰蛋白酶替代治疗（肺部受累）"
+
+
+# ==================== 原发性硬化性胆管炎 ====================
+psc:
+  name: "原发性硬化性胆管炎 (PSC)"
+  category: "rare"
+  description: "慢性胆汁淤积性肝病，常合并炎症性肠病"
+  urgency: "medium-high"
+  
+  core_rules:
+    - field: "labs.ALP"
+      operator: ">"
+      value: 150
+      required: true
+      note: "碱性磷酸酶升高"
+    
+    - field: "MRCP.bile_duct_stricture"
+      operator: "=="
+      value: "positive"
+      required: true
+      note: "MRCP 显示胆管串珠样狭窄"
+  
+  supporting_rules:
+    - field: "history.IBD"
+      operator: "=="
+      value: true
+      score: 0.3
+      note: "合并炎症性肠病（溃疡性结肠炎）"
+    
+    - field: "labs.ANCA"
+      operator: "=="
+      value: "positive"
+      score: 0.2
+    
+    - field: "gender"
+      operator: "=="
+      value: "male"
+      score: 0.15
+    
+    - field: "symptoms.pruritus"
+      operator: "=="
+      value: true
+      score: 0.2
+    
+    - field: "symptoms.jaundice"
+      operator: "=="
+      value: true
+      score: 0.15
+  
+  thresholds:
+    high_confidence: 0.8
+    medium_confidence: 0.55
+    low_confidence: 0.35
+  
+  output:
+    diagnosis: "原发性硬化性胆管炎 (PSC, 疑似)"
+    icd10: "K83.0"
+    referral: "紧急转诊至肝病专科完善 MRCP、结肠镜"
+    urgency: "urgent"
+    recommended_tests:
+      - "MRCP（金标准）"
+      - "结肠镜（筛查 IBD）"
+      - "p-ANCA、IgG4"
+      - "肝脏弹性成像"
+    treatment_hint: "熊去氧胆酸、内镜下扩张、肝移植评估"
