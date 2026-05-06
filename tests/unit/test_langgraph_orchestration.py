@@ -5,9 +5,12 @@ LangGraph 编排测试
 
 import asyncio
 import sys
-sys.path.insert(0, '/data01/shenxf/Agent/medical-agent')
+from pathlib import Path
 
-from core.langgraph_orchestrator import LangGraphOrchestrator
+ROOT_DIR = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT_DIR))
+
+from core.graph_orchestrator import LangGraphDiagnosticGraph
 from loguru import logger
 
 
@@ -87,15 +90,13 @@ async def test_case_1_complete_data():
         }
     }
     
-    orchestrator = LangGraphOrchestrator(
-        rules_dir="/data01/shenxf/Agent/medical-agent/rules",
-        config_path="/data01/shenxf/Agent/medical-agent/config.yaml"
-    )
+    orchestrator = LangGraphDiagnosticGraph(
+        )
     
-    report = await orchestrator.run_diagnosis(patient)
+    report = await orchestrator.run_full_pipeline(patient)
     print_report(report)
     
-    assert report.get('success') == True, "应该成功"
+    assert isinstance(report, dict) and report.get('report_type'), "应返回结构化报告"
     assert report.get('triage_path') in ['common', 'common_fast_path'], "应走常见病路径"
     print("✅ 测试通过：数据完整流程")
 
@@ -120,19 +121,17 @@ async def test_case_2_incomplete_data():
         # 缺少 ultrasound
     }
     
-    orchestrator = LangGraphOrchestrator(
-        rules_dir="/data01/shenxf/Agent/medical-agent/rules",
-        config_path="/data01/shenxf/Agent/medical-agent/config.yaml"
-    )
+    orchestrator = LangGraphDiagnosticGraph(
+        )
     
-    report = await orchestrator.run_diagnosis(patient)
+    report = await orchestrator.run_full_pipeline(patient)
     print_report(report)
     
     metadata = report.get('metadata', {})
     print(f"数据完整性：{metadata.get('data_completeness', 0):.2f}")
     print(f"追问问题数：{metadata.get('questions_asked', 0)}")
     
-    assert report.get('success') == True, "应该成功"
+    assert isinstance(report, dict) and report.get('report_type'), "应返回结构化报告"
     print("✅ 测试通过：数据不完整流程")
 
 
@@ -163,12 +162,10 @@ async def test_case_3_rare_disease_alert():
         }
     }
     
-    orchestrator = LangGraphOrchestrator(
-        rules_dir="/data01/shenxf/Agent/medical-agent/rules",
-        config_path="/data01/shenxf/Agent/medical-agent/config.yaml"
-    )
+    orchestrator = LangGraphDiagnosticGraph(
+        )
     
-    report = await orchestrator.run_diagnosis(patient)
+    report = await orchestrator.run_full_pipeline(patient)
     print_report(report)
     
     triage = report.get('triage', {})
@@ -197,22 +194,20 @@ async def test_case_4_thread_continuation():
         }
     }
     
-    orchestrator = LangGraphOrchestrator(
-        rules_dir="/data01/shenxf/Agent/medical-agent/rules",
-        config_path="/data01/shenxf/Agent/medical-agent/config.yaml"
-    )
+    orchestrator = LangGraphDiagnosticGraph(
+        )
     
     # 第一次诊断
     thread_id = "test_thread_001"
-    report1 = await orchestrator.run_diagnosis(patient, thread_id=thread_id)
-    print(f"第一次诊断完成：{report1.get('triage_path')}")
+    report1 = await orchestrator.run_full_pipeline(patient, config={'thread_id': thread_id})
+    print(f"第一次诊断完成：{report1.get('path')}")
     
     # 第二次诊断（使用相同 thread_id）
-    report2 = await orchestrator.run_diagnosis(patient, thread_id=thread_id)
-    print(f"第二次诊断完成：{report2.get('triage_path')}")
+    report2 = await orchestrator.run_full_pipeline(patient, config={'thread_id': thread_id})
+    print(f"第二次诊断完成：{report2.get('path')}")
     
-    assert report1.get('success') == True, "第一次应该成功"
-    assert report2.get('success') == True, "第二次应该成功"
+    assert isinstance(report1, dict) and report1.get('report_type'), "第一次应返回结构化报告"
+    assert isinstance(report2, dict) and report2.get('report_type'), "第二次应返回结构化报告"
     print("✅ 测试通过：断点续传")
 
 
