@@ -188,101 +188,69 @@ Medical-Agent 旨在打破这一僵局，实现从"被动判读"到"主动推理
 ## 📁 项目结构
 
 ```text
-medical-agent/
-├── README.md                     # 项目说明
-├── requirements.txt              # Python 依赖
-├── setup.py                      # 安装配置
-├── config.yaml                   # 系统配置
-├── .env.example                  # 环境变量模板
-│
-├── api/                          # FastAPI 接口层 (含断点恢复API)
-│   ├── main.py                   # 应用入口
-│   ├── routers/                  # API 路由
-│   │   ├── diagnosis.py          # 诊断接口
-│   │   ├── hitl.py               # HITL 人机交互接口 (断点恢复)
-│   │   └── feedback.py           # 医生反馈接口
-│   └── dependencies.py           # 依赖注入
-│
-├── agents/                       # 智能体定义
-│   ├── __init__.py
-│   ├── base_agent.py             # Agent 基类 (定义 argue, reflect 等内部架构)
-│   ├── attending_agent.py        # 主治医师 Agent (MDT 主持)
-│   └── specialist_agents/        # 专科 Agent 池 (带视角与偏误属性)
-│       ├── __init__.py
-│       ├── hepatologist.py       # 肝病专科 Agent
-│       ├── neurologist.py        # 神经专科 Agent
-│       ├── rheumatologist.py     # 风湿专科 Agent
-│       └── hematologist.py       # 血液专科 Agent
-│
-├── core/                         # 核心引擎与医疗中间件
-│   ├── __init__.py
-│   ├── preprocessor.py           # L1 预处理与基线校验
-│   ├── triage_engine.py          # L2 分诊与分诊期检查建议
-│   ├── graph_orchestrator.py     # LangGraph 编排器 (含HITL中断与回退边) ⭐
-│   ├── state_definition.py       # 全局状态定义 ⭐
-│   │
-│   └── medical_middleware/       # 医疗领域中间件 ⭐
-│       ├── __init__.py
-│       ├── memory_retriever.py   # 动态长时记忆检索
-│       ├── information_gap_assessor.py  # L3精准追问与缺口评估
-│       ├── debate_mediator.py    # 辩论协同与共识提取
-│       ├── graph_updater.py      # 确定性图权重更新 (EWAS)
-│       ├── falsification.py      # 证伪检索工厂
-│       ├── guideline_verifier.py # 指南守门员
-│       └── reference_verifier.py # 引用去幻校验器
-│
-├── tools/                        # L4 外部工具调用 (Agent 授权武器)
-│   ├── __init__.py
-│   ├── pubmed_searcher.py        # PubMed 文献检索
-│   ├── omim_fetcher.py           # OMIM 罕见病数据获取
-│   └── local_mirror_db.py        # 本地镜像数据库操作
-│
-├── memory/                       # 记忆存储与索引
-│   ├── __init__.py
-│   ├── case_vector_db/           # 相似病例向量库
-│   │   ├── index/                # 向量索引文件
-│   │   └── metadata/             # 病例元数据
-│   └── patient_history_cache/    # 患者历史缓存
-│
-├── rules/                        # L1最小必填模板 & L2规则库
-│   ├── baseline_templates/       # 基线校验模板
-│   │   ├── liver_disease.yaml    # 肝病基线模板
-│   │   └── required_fields.yaml  # 必填字段定义
-│   ├── common_diseases.yaml      # 常见病规则
-│   ├── rare_diseases.yaml        # 罕见病规则
-│   └── accessibility_rules.yaml  # 基层可及性规则
-│
-├── knowledge_base/               # 知识库与基层可及性配置
-│   ├── guidelines/               # 诊疗指南
-│   │   ├── aasld/                # AASLD 指南
-│   │   └── easl/                 # EASL 指南
-│   ├── rare_diseases/            # 罕见病知识
-│   │   ├── orphanet/             # Orphanet 数据
-│   │   └── omim/                 # OMIM 数据
-│   ├── accessibility/            # 基层可及性配置
-│   │   ├── equipment_mapping.yaml    # 设备映射
-│   │   └── alternative_tests.yaml    # 替代检查方案
-│   └── hpo_terms/                # HPO 术语库
-│
-├── tests/                        # 测试用例
-│   ├── unit/                     # 单元测试
-│   ├── integration/              # 集成测试
-│   └── fixtures/                 # 测试数据
-│
-├── docs/                         # 文档
-│   ├── architecture/             # 架构文档
-│   ├── api/                      # API 文档
-│   └── deployment/               # 部署指南
-│
-└── examples/                     # 示例代码
-    ├── basic_diagnosis.py        # 基础诊断示例
-    ├── advanced_debate.py        # 高级辩论示例
-    └── batch_processing.py       # 批量处理示例
+Rare-Hepatic-Disease-Multi-Agent-System/
+├── README.md
+├── requirements.txt
+├── setup.py
+├── config.yaml
+├── agents/                          # 多智能体层（主治 + 专科）
+│   ├── attending_agent.py
+│   ├── diagnostic_reasoner.py
+│   ├── history_collector_v2.py
+│   ├── imaging_analyzer.py
+│   ├── knowledge_retriever.py
+│   ├── lab_interpreter.py
+│   ├── referral_decider.py
+│   └── specialist_agents/
+│       ├── hepatologist.py
+│       ├── neurologist.py
+│       ├── rheumatologist.py
+│       └── hematologist.py
+├── api/                             # FastAPI 接口
+│   ├── main.py
+│   ├── dependencies.py
+│   ├── schemas.py
+│   ├── routes.py
+│   └── routers/
+│       ├── diagnosis.py
+│       ├── hitl.py
+│       └── feedback.py
+├── core/                            # 编排与推理核心
+│   ├── graph_orchestrator.py        # LangGraph StateGraph 主流程
+│   ├── state_definition.py          # 全局状态定义
+│   ├── preprocessor.py              # L1 预处理
+│   ├── data_assessor.py             # L1 数据完整度评估
+│   ├── triage.py                    # L2 规则+LLM 分诊
+│   ├── mdt_manager.py
+│   └── medical_middleware/
+│       ├── memory_retriever.py
+│       ├── information_gap_assessor.py
+│       ├── debate_mediator.py
+│       ├── graph_updater.py
+│       ├── falsification.py
+│       ├── guideline_verifier.py
+│       └── reference_verifier.py
+├── tools/                           # L4 检索/知识工具
+│   ├── adaptive_classifier.py
+│   ├── guideline_search.py
+│   ├── hpo_extractor.py
+│   ├── hpo_search.py
+│   ├── pubmed_search.py
+│   ├── rare_disease_db.py
+│   └── web_search.py
+├── rules/                           # 分诊规则与字段映射
+│   ├── common_diseases.yaml
+│   ├── rare_diseases.yaml
+│   └── field_test_mapping.yaml
+├── frontend/                        # 前端工作站
+├── tests/                           # 单元/病例测试与结果
+├── docs/                            # 架构/API 文档
+└── scripts/                         # Demo 与辅助脚本
 ```
 
 ***
 
-## � 模块级设计架构详解
+## 📐 模块级设计架构详解
 
 ### L1 层 - 数据标准化与基线校验
 
@@ -483,19 +451,12 @@ flowchart TB
 **条件分支逻辑：**
 
 ```text
-baseline_check
-    ├─ 缺失 → 打回补填 (HITL)
-    └─ 完备 → rule_engine
-
-rule_engine
-    ├─ 命中常见病 → generate_success_report (L5)
-    ├─ 未命中 → llm_triage
-    └─ 不确定 → generate_fallback_report (L5)
-
-llm_triage
-    ├─ COMMON → generate_success_report (L5)
-    ├─ UNCERTAIN → generate_fallback_report (L5)
-    └─ SUSPECTED_RARE → memory_retrieval (L3)
+preprocessing
+    └─ data_assessment
+          └─ triage
+               ├─ common_fast_path → common_disease_report (L5a)
+               ├─ rare_deep_path → memory_retrieval (L3)
+               └─ uncertain_fallback → triage_examination_report (L5b)
 
 falsification
     ├─ 假设被推翻 → 状态回退 → mdt_debate (重新辩论)
@@ -517,12 +478,10 @@ guideline_verify
 
 | Agent 名称          | 专科领域 | 主要职责      |
 | ----------------- | ---- | --------- |
-| HepatologyAgent   | 肝病专科 | 肝脏疾病诊断与鉴别 |
-| NeurologyAgent    | 神经专科 | 神经系统症状分析  |
-| RheumatologyAgent | 风湿专科 | 自身免疫性疾病评估 |
+| HepatologistAgent   | 肝病专科 | 肝脏疾病诊断与鉴别 |
+| NeurologistAgent    | 神经专科 | 神经系统症状分析  |
+| RheumatologistAgent | 风湿专科 | 自身免疫性疾病评估 |
 | HematologyAgent   | 血液专科 | 血液系统异常解读  |
-| PathologyAgent    | 病理专科 | 病理切片分析    |
-| RadiologyAgent    | 影像专科 | 影像检查解读    |
 
 **动态组队逻辑：**
 
