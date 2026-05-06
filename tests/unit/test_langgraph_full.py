@@ -16,7 +16,7 @@ from core.medical_middleware import (
     MDTManager, DebateMediator, FalsificationEngine,
     InformationGapAssessor, GuidelineVerifier, GraphUpdater, MemoryRetriever
 )
-from agents import HepatologyAgent, NeurologyAgent, RheumatologyAgent, HematologyAgent
+from agents import HepatologistAgent, NeurologistAgent, RheumatologistAgent, HematologistAgent
 from loguru import logger
 
 logger.remove()
@@ -83,9 +83,9 @@ async def test_langgraph_workflow():
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     
     agent_pool = {
-        'HepatologyAgent': HepatologyAgent(),
-        'NeurologyAgent': NeurologyAgent(),
-        'RheumatologyAgent': RheumatologyAgent(),
+        'HepatologistAgent': HepatologistAgent(),
+        'NeurologistAgent': NeurologistAgent(),
+        'RheumatologistAgent': RheumatologistAgent(),
         'HematologyAgent': HematologyAgent(),
     }
     
