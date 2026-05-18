@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from core.graph_orchestrator import LangGraphDiagnosticGraph
 from core.medical_middleware import (
     MDTManager, DebateMediator, FalsificationEngine,
-    InformationGapAssessor, GuidelineVerifier, GraphUpdater, MemoryRetriever
+    InformationGapAssessor, GuidelineVerifier, MemoryRetriever
 )
 from agents import HepatologistAgent, NeurologistAgent, RheumatologistAgent, HematologistAgent
 from loguru import logger
@@ -96,7 +96,6 @@ async def test_langgraph_workflow():
         falsification_engine=FalsificationEngine(),
         gap_assessor=InformationGapAssessor(),
         guideline_verifier=GuidelineVerifier(),
-        graph_updater=GraphUpdater(),
         memory_retriever=MemoryRetriever(),
     )
     

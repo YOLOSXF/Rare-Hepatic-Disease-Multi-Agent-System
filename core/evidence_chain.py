@@ -293,7 +293,7 @@ class TraceableEvidenceGenerator:
         contradictions = []
         
         if disease == 'Wilson_Disease':
-            ceruloplasmin = patient_data.get('labs', {}).get('Ceruloplasmin', 1.0)
+            ceruloplasmin = patient_data.get('labs', {}).get('ceruloplasmin', 1.0)
             if ceruloplasmin > 0.60:
                 contradictions.append('铜蓝蛋白正常或升高')
         

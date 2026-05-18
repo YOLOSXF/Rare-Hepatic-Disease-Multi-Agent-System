@@ -163,7 +163,7 @@ class MDTFinalReport(ReportBase):
     referral: Dict[str, Any]
     debate_process: Optional[Dict]
     falsification_log: List[Any]
-    knowledge_graph: Dict[str, float]
+    knowledge_graph: List[Any]
     memory_context: Optional[Dict]
     guideline_check: Optional[Any]
     hitl_questions: List[Any]
@@ -249,9 +249,6 @@ class DiagnosticState(TypedDict):
     
     # HITL 挂起时的问题列表
     hitl_questions: List[Question]
-    
-    # 图谱节点权重 {disease_name: weight}
-    knowledge_graph_weights: Annotated[Dict[str, float], operator.ior]
     
     # 被证伪排除的假设
     excluded_hypotheses: Annotated[List[str], operator.add]

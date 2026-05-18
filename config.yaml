@@ -117,3 +117,28 @@ security:
 
 # 部署环境
 environment: development  # development | production
+
+# 知识图谱配置
+knowledge_graph:
+  enabled: false  # Feature Flag: KG功能总开关，false时系统行为与集成前完全一致
+  engine: "networkx"  # 图存储引擎: networkx(开发) | neo4j(生产)
+  neo4j:
+    url: "bolt://localhost:7687"
+    username: "neo4j"
+    password: "12345678"
+  milvus:
+    host: "localhost"
+    port: 19530
+    collection_name: "kg_entities"
+  embedding_model: "BAAI/bge-m3"  # 嵌入模型: BGE-M3 (1024-dim)
+  embedding_dim: 1024
+  activation:
+    similarity_threshold: 0.5  # 向量检索最低相似度阈值
+    top_k_diseases: 5  # 返回的Top-K候选疾病数
+    core_feature_weight: 2.0  # 核心特征(is_core=true)权重
+    supporting_feature_weight: 1.0  # 支持特征(is_core=false)权重
+  integration:
+    falsification: false  # KG contradicts关系替代硬编码证伪规则
+    guideline_verify: false  # KG guided_by关系替代硬编码指南验证
+    info_gap: false  # KG IC值/度中心性驱动追问优先级
+    debate_context: false  # KG差异上下文注入MDT辩论

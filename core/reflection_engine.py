@@ -216,7 +216,7 @@ class SelfReflectionEngine:
                 for finding in abnormal_findings:
                     if isinstance(finding, dict):
                         test = finding.get('test', '')
-                        if test == 'Ceruloplasmin' and finding.get('direction') == 'low':
+                        if test == 'ceruloplasmin' and finding.get('direction') == 'low':
                             labs_data['low_ceruloplasmin'] = True
                         if test == 'Ferritin' and finding.get('direction') == 'high':
                             labs_data['high_ferritin'] = True
@@ -295,7 +295,7 @@ class SelfReflectionEngine:
                     if isinstance(finding, dict):
                         test = finding.get('test', '')
                         value = finding.get('value')
-                        if test == 'Ceruloplasmin' and isinstance(value, (int, float)):
+                        if test == 'ceruloplasmin' and isinstance(value, (int, float)):
                             ceruloplasmin = value
                         elif test == 'Ferritin' and isinstance(value, (int, float)):
                             ferritin = value

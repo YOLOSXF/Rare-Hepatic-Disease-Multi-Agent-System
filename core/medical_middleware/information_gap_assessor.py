@@ -117,9 +117,9 @@ class InformationGapAssessor:
         
         # Wilson病关键缺证
         if 'Wilson' in disease or 'wilson' in disease.lower():
-            if 'Ceruloplasmin' not in labs:
+            if 'ceruloplasmin' not in labs:
                 questions.append(GapQuestion(
-                    field="Ceruloplasmin",
+                    field="ceruloplasmin",
                     question="请提供血清铜蓝蛋白水平",
                     rationale="铜蓝蛋白是Wilson病的关键诊断指标",
                     priority=QuestionPriority.CRITICAL,

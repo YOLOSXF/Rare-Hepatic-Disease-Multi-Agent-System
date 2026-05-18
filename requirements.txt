@@ -44,7 +44,22 @@ dashscope>=1.14.0
 # Database (optional for future)
 # psycopg2-binary>=2.9.0
 # redis>=5.0.0
-# pymilvus>=2.3.0
+
+# Knowledge Graph
+neo4j>=5.0.0
+pymilvus>=2.3.0
+networkx>=3.0
+
+# Embedding & NLP
+sentence-transformers>=2.2.0
+numpy>=1.24.0
+
+# PDF Parsing
+PyMuPDF>=1.23.0
+
+# KG Utilities
+obonet>=0.3.0
+rapidfuzz>=3.0.0
 
 # Utilities
 tenacity>=8.2.0

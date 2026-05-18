@@ -40,8 +40,8 @@ class DataPreprocessor:
         'TBil': {'target_unit': 'μmol/L', 'conversions': {'μmol/L': 1, 'mg/dL': 17.1}},
         'DBil': {'target_unit': 'μmol/L', 'conversions': {'μmol/L': 1, 'mg/dL': 17.1}},
         'Albumin': {'target_unit': 'g/L', 'conversions': {'g/L': 1, 'g/dL': 10}},
-        'Ceruloplasmin': {'target_unit': 'g/L', 'conversions': {'g/L': 1, 'mg/L': 0.001}},
-        'Ferritin': {'target_unit': 'μg/L', 'conversions': {'μg/L': 1, 'ng/mL': 1}},
+        'ceruloplasmin': {'target_unit': 'g/L', 'conversions': {'g/L': 1, 'mg/L': 0.001}},
+        'ferritin': {'target_unit': 'μg/L', 'conversions': {'μg/L': 1, 'ng/mL': 1}},
         'IgG': {'target_unit': 'g/L', 'conversions': {'g/L': 1, 'mg/dL': 0.01}},
     }
     
@@ -85,6 +85,12 @@ class DataPreprocessor:
             standardized['basic_info'] = self._standardize_basic_info(
                 raw_data, missing, warnings
             )
+            
+            # 将 age/gender 提升到顶层，确保下游分诊引擎可直接读取
+            if 'age' in standardized['basic_info']:
+                standardized['age'] = standardized['basic_info']['age']
+            if 'gender' in standardized['basic_info']:
+                standardized['gender'] = standardized['basic_info']['gender']
             
             # 2. 主诉清洗
             standardized['chief_complaint'] = self._clean_chief_complaint(
@@ -425,7 +431,7 @@ if __name__ == "__main__":
             "ALT": {"value": 85, "unit": "U/L"},
             "AST": {"value": 120, "unit": "U/L"},
             "TBil": {"value": 5.2, "unit": "mg/dL"},  # 需要转换
-            "Ceruloplasmin": 0.15
+            "ceruloplasmin": 0.15
         },
         "ultrasound": "肝回声增强，肝肾回声比值增加",
         "history": {

@@ -63,7 +63,7 @@ async def resume_diagnosis(request: HITLResumeRequest):
         from core.graph_orchestrator import LangGraphDiagnosticGraph
         from core.medical_middleware import (
             MDTManager, DebateMediator, FalsificationEngine,
-            InformationGapAssessor, GuidelineVerifier, GraphUpdater, MemoryRetriever
+            InformationGapAssessor, GuidelineVerifier, MemoryRetriever
         )
         from agents.specialist_agents import (
             HepatologistAgent, NeurologistAgent,
@@ -85,7 +85,6 @@ async def resume_diagnosis(request: HITLResumeRequest):
             falsification_engine=FalsificationEngine(),
             gap_assessor=InformationGapAssessor(),
             guideline_verifier=GuidelineVerifier(),
-            graph_updater=GraphUpdater(),
             memory_retriever=MemoryRetriever(),
         )
         
@@ -101,9 +100,11 @@ async def resume_diagnosis(request: HITLResumeRequest):
             else:
                 patient_data[key] = value
         
-        # 重新运行诊断流程
-        config = {'thread_id': session_id}
-        result = await orchestrator.run_full_pipeline(patient_data, config=config)
+        # 从断点恢复诊断流程（使用 resume_from_hitl 而非 run_full_pipeline）
+        result = await orchestrator.resume_from_hitl(
+            thread_id=session_id,
+            patient_answers=request.answers,
+        )
         
         # 清理会话
         del hitl_sessions[session_id]

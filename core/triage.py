@@ -390,8 +390,9 @@ class RuleEngine:
             
             strategy = field_combine_strategy.get(field_path, 'max')
             
-            # 记录该字段最大的可能分
-            if strategy == 'sum':
+            if score < 0:
+                field_max_available[field_path] = field_max_available.get(field_path, 0)
+            elif strategy == 'sum':
                 field_max_available[field_path] = field_max_available.get(field_path, 0) + score
             else:
                 field_max_available[field_path] = max(
@@ -411,7 +412,9 @@ class RuleEngine:
             
             
             if matched:
-                if strategy == 'sum':
+                if score < 0:
+                    field_actual_score[field_path] = field_actual_score.get(field_path, 0) + score
+                elif strategy == 'sum':
                     field_actual_score[field_path] = field_actual_score.get(field_path, 0) + score
                 else:
                     field_actual_score[field_path] = max(

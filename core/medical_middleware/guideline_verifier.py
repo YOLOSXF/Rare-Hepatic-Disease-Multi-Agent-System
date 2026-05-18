@@ -113,13 +113,13 @@ class GuidelineVerifier:
     def _check_criterion(self, criterion: str, labs: Dict, symptoms: Dict) -> bool:
         """检查单个标准是否满足"""
         if "Ceruloplasmin降低" in criterion:
-            return labs.get('Ceruloplasmin', 1.0) < 0.1
+            return labs.get('ceruloplasmin', 1.0) < 0.20
         elif "AMA-M2阳性" in criterion:
             return labs.get('AMA_M2', 0) > 0
         elif "铁蛋白升高" in criterion:
-            return labs.get('Ferritin', 0) > 1000
+            return labs.get('ferritin', 0) > 1000
         elif "转铁蛋白饱和度升高" in criterion:
-            return labs.get('Transferrin_Saturation', 0) > 45
+            return labs.get('transferrin_saturation', 0) > 45
         elif "ALP升高" in criterion:
             return labs.get('ALP', 0) > 120
         elif "肝病表现" in criterion:

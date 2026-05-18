@@ -71,7 +71,7 @@ class FalsificationEngine:
         # 基于疾病特异性规则进行证伪
         if 'Wilson' in disease or 'wilson' in disease.lower():
             # Wilson病的证伪：铜蓝蛋白正常或升高
-            ceruloplasmin = labs.get('Ceruloplasmin')
+            ceruloplasmin = labs.get('ceruloplasmin')
             if ceruloplasmin is not None and ceruloplasmin >= 0.2:
                 contradicting_evidence.append(
                     f"铜蓝蛋白正常或升高 ({ceruloplasmin} g/L)，不支持Wilson病"
@@ -87,7 +87,7 @@ class FalsificationEngine:
         
         elif '血色病' in disease or 'hemochromatosis' in disease.lower():
             # 血色病的证伪：铁蛋白正常
-            ferritin = labs.get('Ferritin')
+            ferritin = labs.get('ferritin')
             if ferritin is not None and ferritin < 300:
                 contradicting_evidence.append(
                     f"铁蛋白正常 ({ferritin} ng/mL)，不支持血色病"

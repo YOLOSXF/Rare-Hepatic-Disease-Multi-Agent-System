@@ -11,7 +11,7 @@ LangGraph 对抗推理编排器 (v3.0 - 原生 StateGraph 实现)
 架构对应：
 - L1: preprocessing → data_assessment
 - L2: triage → [条件分支]
-- L3: memory_retrieval → mdt_team_assemble → mdt_debate → graph_update → falsification → hitl_gap_assess → guideline_verify
+- L3: memory_retrieval → mdt_team_assemble → mdt_debate → falsification → hitl_gap_assess → guideline_verify
 - L4: 通过 tools/ 和 knowledge_base/ 提供外部知识
 - L5: 报告生成
 """
@@ -42,7 +42,7 @@ class LangGraphDiagnosticGraph:
         ├─ rare_deep_path → L3 → mdt_final_report（MDT深度诊断报告）
         └─ uncertain_fallback → triage_examination_report（补检开单建议）
     L3: memory_retrieval → mdt_team_assemble → [SEND并行] mdt_debate
-       → graph_update → falsification → [条件边: 证伪回退 mdt_debate]
+       → falsification → [条件边: 证伪回退 mdt_debate]
        → hitl_gap_assess → [条件边: 缺证 interrupt]
        → guideline_verify → [条件边: 不合规打回 mdt_debate]
        → referral_decision → mdt_final_report
@@ -61,7 +61,6 @@ class LangGraphDiagnosticGraph:
         gap_assessor: Optional[Any] = None,
         guideline_verifier: Optional[Any] = None,
         reference_verifier: Optional[Any] = None,
-        graph_updater: Optional[Any] = None,
         memory_retriever: Optional[Any] = None,
         max_debate_rounds: int = 3,
         max_falsification_retries: int = 2,
@@ -75,7 +74,6 @@ class LangGraphDiagnosticGraph:
         self.gap_assessor = gap_assessor
         self.guideline_verifier = guideline_verifier
         self.reference_verifier = reference_verifier
-        self.graph_updater = graph_updater
         self.memory_retriever = memory_retriever
         
         self.max_debate_rounds = max_debate_rounds
@@ -99,7 +97,6 @@ class LangGraphDiagnosticGraph:
         workflow.add_node("memory_retrieval", self._node_memory_retrieval)
         workflow.add_node("mdt_team_assemble", self._node_mdt_team_assemble)
         workflow.add_node("mdt_debate", self._node_mdt_debate)
-        workflow.add_node("graph_update", self._node_graph_update)
         workflow.add_node("falsification", self._node_falsification)
         workflow.add_node("hitl_gap_assess", self._node_hitl_gap_assess)
         workflow.add_node("guideline_verify", self._node_guideline_verify)
@@ -130,8 +127,7 @@ class LangGraphDiagnosticGraph:
         workflow.add_edge("common_fast_path", "common_disease_report")
         workflow.add_edge("memory_retrieval", "mdt_team_assemble")
         workflow.add_edge("mdt_team_assemble", "mdt_debate")
-        workflow.add_edge("mdt_debate", "graph_update")
-        workflow.add_edge("graph_update", "falsification")
+        workflow.add_edge("mdt_debate", "falsification")
         
         workflow.add_conditional_edges(
             "falsification",
@@ -453,10 +449,6 @@ class LangGraphDiagnosticGraph:
             team_specialties = list(self.specialist_agents.keys())
         
         return {
-            'knowledge_graph_weights': {
-                'mdt_team_size': float(team_size),
-                'team_specialties': team_specialties,
-            },
             'current_phase': 'mdt_team_assemble',
         }
     
@@ -494,11 +486,6 @@ class LangGraphDiagnosticGraph:
                 'consensus_points': debate_result.consensus_points,
                 'disagreements': debate_result.disagreements,
                 'all_perspectives': debate_result.all_perspectives,
-            }
-            
-            updates['knowledge_graph_weights'] = {
-                **state.get('knowledge_graph_weights', {}),
-                'debate_consensus': debate_result.confidence,
             }
             
             if debate_result.consensus_diagnosis:
@@ -545,25 +532,6 @@ class LangGraphDiagnosticGraph:
         
         return updates
     
-    async def _node_graph_update(self, state: DiagnosticState) -> Dict[str, Any]:
-        """L3-EWAS: 图谱权重更新"""
-        logger.info("=== L3: Graph Update (EWAS) ===")
-        
-        if self.graph_updater and state.get('debate_state'):
-            class FakeDebateResult:
-                pass
-            fake_result = FakeDebateResult()
-            debate_state = state['debate_state']
-            fake_result.consensus_diagnosis = None
-            fake_result.confidence = 0.8 if debate_state.get('consensus_points') else 0.0
-            fake_result.all_perspectives = debate_state.get('all_perspectives', [])
-            fake_result.debate_log = []
-            
-            new_weights = self.graph_updater.update_from_debate_result(fake_result, state['patient_data'])
-            return {'knowledge_graph_weights': new_weights, 'current_phase': 'graph_update'}
-        
-        return {'current_phase': 'graph_update'}
-    
     async def _node_falsification(self, state: DiagnosticState) -> Dict[str, Any]:
         """L3: 证伪反思"""
         logger.info("=== L3: Falsification ===")
@@ -590,8 +558,6 @@ class LangGraphDiagnosticGraph:
                 
                 if fr.falsified:
                     excluded.append(fr.hypothesis)
-                    if self.graph_updater:
-                        self.graph_updater.suppress_disease(fr.hypothesis)
             
             updates['falsification_log'] = falsification_log
             updates['excluded_hypotheses'] = excluded
@@ -1003,7 +969,7 @@ class LangGraphDiagnosticGraph:
             referral=state.get('referral_decision', {}),
             debate_process=state.get('debate_state'),
             falsification_log=falsification_entries,
-            knowledge_graph=state.get('knowledge_graph_weights', {}),
+            knowledge_graph=state.get('hypotheses', []),
             memory_context=state.get('memory_context'),
             guideline_check=state.get('guideline_check_result'),
             hitl_questions=state.get('hitl_questions', []),
@@ -1034,7 +1000,6 @@ class LangGraphDiagnosticGraph:
             falsification_log=[],
             hitl_status='normal',
             hitl_questions=[],
-            knowledge_graph_weights={},
             excluded_hypotheses=[],
             memory_context={},
             guideline_check_result=None,

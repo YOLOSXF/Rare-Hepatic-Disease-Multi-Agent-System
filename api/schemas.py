@@ -13,6 +13,8 @@ class PatientInput(BaseModel):
     chief_complaint: str = Field(..., description="主诉")
     age: Optional[int] = Field(None, description="年龄")
     gender: Optional[str] = Field(None, description="性别")
+    symptoms: Optional[Dict[str, Any]] = Field(None, description="症状列表，如 {\"tremor\": true, \"jaundice\": true}")
+    eye_exam: Optional[Dict[str, Any]] = Field(None, description="眼部检查结果，如 {\"kf_ring\": \"positive\"}")
     lab_results: Optional[Dict[str, Any]] = Field(None, description="检验结果")
     imaging_results: Optional[Dict[str, Any]] = Field(None, description="影像结果")
     medical_history: Optional[Dict[str, Any]] = Field(None, description="既往史")

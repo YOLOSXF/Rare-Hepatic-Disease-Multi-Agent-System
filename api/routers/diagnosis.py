@@ -28,7 +28,8 @@ async def diagnose(patient_input: PatientInput):
         'gender': patient_input.gender,
         'chief_complaint': patient_input.chief_complaint,
         'history': patient_input.medical_history or {},
-        'symptoms': {},  # PatientInput 中没有 symptoms 字段
+        'symptoms': patient_input.symptoms or {},
+        'eye_exam': patient_input.eye_exam or {},
         'labs': patient_input.lab_results or {},
         'ultrasound': patient_input.imaging_results or {},
     }
@@ -139,7 +140,8 @@ async def quick_screen(patient_input: PatientInput):
         'gender': patient_input.gender,
         'chief_complaint': patient_input.chief_complaint,
         'history': patient_input.medical_history or {},
-        'symptoms': {},  # PatientInput 中没有 symptoms 字段
+        'symptoms': patient_input.symptoms or {},
+        'eye_exam': patient_input.eye_exam or {},
         'labs': patient_input.lab_results or {},
     }
 
