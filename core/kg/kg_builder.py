@@ -58,11 +58,17 @@ class KGBuilder:
         self.snapshot_dir.mkdir(parents=True, exist_ok=True)
         self._build_report: Dict[str, Any] = {}
         self._last_extraction_result: Optional[ExtractionResult] = None
+        self._writer: Optional[KGWriter] = None
 
         if disease_pipeline is not None:
             self._pipeline = disease_pipeline
         else:
             self._pipeline = None
+
+    def _get_writer(self) -> KGWriter:
+        if self._writer is None:
+            self._writer = KGWriter(self.config)
+        return self._writer
 
     def build_predefined(self) -> Dict[str, Any]:
         logger.info("=" * 60)
@@ -595,8 +601,9 @@ class KGBuilder:
 
         try:
             all_results = []
-            chunker = MedicalChunker() if not hasattr(self, '_chunker') else self._chunker
+            from core.kg.kg_chunker import MedicalChunker
             from core.kg.kg_extractor import KGExtractor
+            chunker = MedicalChunker() if not hasattr(self, '_chunker') else self._chunker
             extractor = KGExtractor()
 
             for pdf_path in pdf_paths:
@@ -728,7 +735,8 @@ class KGBuilder:
         import networkx as nx
         from core.kg.kg_writer import KGWriter
 
-        G = KGWriter._nx_graph
+        writer = self._get_writer()
+        G = writer.get_nx_graph()
         if G is None:
             logger.warning("NetworkX图为空，生成空快照")
             return KGSnapshot(
@@ -928,7 +936,8 @@ class KGBuilder:
     def _validate_build_networkx(self, rules: Dict[str, Any]) -> Dict[str, Any]:
         from core.kg.kg_writer import KGWriter
 
-        G = KGWriter._nx_graph
+        writer = self._get_writer()
+        G = writer.get_nx_graph()
         checks: Dict[str, Any] = {"passed": True, "checks": {}}
 
         total_nodes = G.number_of_nodes() if G else 0

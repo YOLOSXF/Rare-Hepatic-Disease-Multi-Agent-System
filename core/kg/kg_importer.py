@@ -36,23 +36,6 @@ from core.kg.kg_config import KGConfig
 from core.kg.kg_writer import KGWriter
 
 
-EL1_NODES = [
-    {"id": "METABOLIC", "name": "代谢性疾病", "name_en": "Metabolic Disease"},
-    {"id": "HEPATOBILIARY", "name": "肝胆疾病", "name_en": "Hepatobiliary Disease"},
-    {"id": "NEUROLOGICAL", "name": "神经系统疾病", "name_en": "Neurological Disease"},
-    {"id": "GENETIC", "name": "遗传性疾病", "name_en": "Genetic Disease"},
-]
-
-EL2_NODES = [
-    {"id": "COPPER_METABOLISM", "name": "铜代谢障碍", "name_en": "Copper Metabolism Disorder", "parent": "METABOLIC"},
-    {"id": "IRON_METABOLISM", "name": "铁代谢障碍", "name_en": "Iron Metabolism Disorder", "parent": "METABOLIC"},
-    {"id": "CHRONIC_LIVER", "name": "慢性肝病", "name_en": "Chronic Liver Disease", "parent": "HEPATOBILIARY"},
-    {"id": "AUTOIMMUNE_LIVER", "name": "自身免疫性肝病", "name_en": "Autoimmune Liver Disease", "parent": "HEPATOBILIARY"},
-    {"id": "CHOLESTATIC", "name": "胆汁淤积性肝病", "name_en": "Cholestatic Liver Disease", "parent": "HEPATOBILIARY"},
-    {"id": "MOVEMENT_DISORDER", "name": "运动障碍疾病", "name_en": "Movement Disorder", "parent": "NEUROLOGICAL"},
-]
-
-
 class KGImporter:
     def __init__(self, config: Optional[KGConfig] = None, writer: Optional[KGWriter] = None):
         self.config = config or KGConfig.from_yaml()
@@ -86,9 +69,10 @@ class KGImporter:
             self._writer._nx_graph = None
             logger.info("NetworkX graph cleared")
 
-    def import_el1_nodes(self, nodes: Optional[List[Dict]] = None) -> int:
-        if nodes is None:
-            nodes = EL1_NODES
+    def import_el1_nodes(self, nodes: List[Dict]) -> int:
+        if not nodes:
+            logger.warning("No EL1 nodes provided, skipping EL1 import")
+            return 0
 
         count = 0
         for node in nodes:
@@ -112,9 +96,10 @@ class KGImporter:
         logger.info(f"Imported {count} EL1 nodes")
         return count
 
-    def import_el2_nodes(self, nodes: Optional[List[Dict]] = None) -> int:
-        if nodes is None:
-            nodes = EL2_NODES
+    def import_el2_nodes(self, nodes: List[Dict]) -> int:
+        if not nodes:
+            logger.warning("No EL2 nodes provided, skipping EL2 import")
+            return 0
 
         count = 0
         for node in nodes:
@@ -212,8 +197,8 @@ class KGImporter:
     def import_extraction_result(
         self,
         result: ExtractionResult,
-        el1_nodes: Optional[List[Dict]] = None,
-        el2_nodes: Optional[List[Dict]] = None,
+        el1_nodes: List[Dict],
+        el2_nodes: List[Dict],
     ) -> Dict[str, int]:
         stats = {}
         stats["el1"] = self.import_el1_nodes(el1_nodes)

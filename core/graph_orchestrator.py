@@ -62,6 +62,7 @@ class LangGraphDiagnosticGraph:
         guideline_verifier: Optional[Any] = None,
         reference_verifier: Optional[Any] = None,
         memory_retriever: Optional[Any] = None,
+        kg_interface: Optional[Any] = None,
         max_debate_rounds: int = 3,
         max_falsification_retries: int = 2,
         enable_llm_report: bool = True,
@@ -75,6 +76,15 @@ class LangGraphDiagnosticGraph:
         self.guideline_verifier = guideline_verifier
         self.reference_verifier = reference_verifier
         self.memory_retriever = memory_retriever
+        self.kg_interface = kg_interface
+        
+        if kg_interface and kg_interface.is_enabled():
+            if self.falsification_engine is not None:
+                self.falsification_engine.kg_interface = kg_interface
+            if self.guideline_verifier is not None:
+                self.guideline_verifier.kg_interface = kg_interface
+            if self.gap_assessor is not None:
+                self.gap_assessor.kg_interface = kg_interface
         
         self.max_debate_rounds = max_debate_rounds
         self.max_falsification_retries = max_falsification_retries
@@ -414,22 +424,54 @@ class LangGraphDiagnosticGraph:
         return {'current_phase': 'common_fast_path'}
     
     async def _node_memory_retrieval(self, state: DiagnosticState) -> Dict[str, Any]:
-        """L3: 长时记忆检索"""
+        """L3: 长时记忆检索 + KG激活"""
         logger.info("=== L3: Memory Retrieval ===")
+        
+        updates: Dict[str, Any] = {
+            'memory_context': {'similar_cases': [], 'historical_trends': {}},
+            'current_phase': 'memory_retrieval',
+        }
         
         if self.memory_retriever:
             memory_ctx = await self.memory_retriever.retrieve(state['patient_data'])
-            return {
-                'memory_context': {
-                    'longitudinal_summary': memory_ctx.longitudinal_summary,
-                    'similar_cases': memory_ctx.similar_cases,
-                    'historical_trends': memory_ctx.historical_trends,
-                    'last_visit_summary': memory_ctx.last_visit_summary,
-                },
-                'current_phase': 'memory_retrieval',
+            updates['memory_context'] = {
+                'longitudinal_summary': memory_ctx.longitudinal_summary,
+                'similar_cases': memory_ctx.similar_cases,
+                'historical_trends': memory_ctx.historical_trends,
+                'last_visit_summary': memory_ctx.last_visit_summary,
             }
         
-        return {'memory_context': {'similar_cases': [], 'historical_trends': {}}, 'current_phase': 'memory_retrieval'}
+        if self.kg_interface and self.kg_interface.is_enabled():
+            try:
+                patient_data = state['patient_data']
+                triage_hint = None
+                triage_result = state.get('triage_result')
+                if triage_result and isinstance(triage_result, dict):
+                    triage_hint = triage_result.get('diagnosis', '')
+                
+                retrieval_result, activation_results = self.kg_interface.retrieve_and_classify(
+                    patient_data, triage_hint=triage_hint
+                )
+                
+                updates['kg_retrieval_result'] = (
+                    retrieval_result.to_dict() if hasattr(retrieval_result, 'to_dict') else {}
+                )
+                updates['kg_activation_results'] = [
+                    a.to_dict() if hasattr(a, 'to_dict') else a for a in activation_results
+                ]
+                updates['kg_degradation_level'] = retrieval_result.degradation_level
+                
+                logger.info(
+                    f"KG激活完成: {len(retrieval_result.candidate_diseases)}个候选, "
+                    f"降级等级={retrieval_result.degradation_level}"
+                )
+            except Exception as e:
+                logger.warning(f"KG激活失败，降级跳过: {e}")
+                updates['kg_retrieval_result'] = None
+                updates['kg_activation_results'] = []
+                updates['kg_degradation_level'] = 0
+        
+        return updates
     
     async def _node_mdt_team_assemble(self, state: DiagnosticState) -> Dict[str, Any]:
         """L3: MDT 团队组建"""
@@ -453,16 +495,41 @@ class LangGraphDiagnosticGraph:
         }
     
     async def _node_mdt_debate(self, state: DiagnosticState) -> Dict[str, Any]:
-        """L3: 多专科对抗辩论 (支持并行)"""
+        """L3: 多专科对抗辩论 (支持并行 + KG差异上下文注入)"""
         logger.info("=== L3: MDT Debate ===")
         
-        # 使用新的MDT架构运行专科分析
         specialist_results = await self._run_specialist_analyses(state)
         
         updates: Dict[str, Any] = {
             'current_phase': 'mdt_debate', 
             'retry_count': state.get('retry_count', 0) + 1
         }
+        
+        if self.kg_interface and self.kg_interface.is_enabled():
+            try:
+                kg_config = self.kg_interface.config
+                if kg_config.integration.debate_context:
+                    kg_debate_context = {}
+                    kg_result = state.get('kg_retrieval_result') or {}
+                    candidates = kg_result.get('candidate_diseases', []) if isinstance(kg_result, dict) else []
+                    for candidate in candidates:
+                        disease_id = candidate.get('disease_id', candidate.get('name', ''))
+                        if disease_id:
+                            context = self.kg_interface.get_debate_context(disease_id)
+                            if context.get('differentials'):
+                                kg_debate_context[disease_id] = context
+                    
+                    if kg_debate_context:
+                        existing_ctx = state.get('memory_context', {})
+                        if not isinstance(existing_ctx, dict):
+                            existing_ctx = {}
+                        updates['memory_context'] = {
+                            **existing_ctx,
+                            'kg_debate_context': kg_debate_context,
+                        }
+                        logger.info(f"KG差异上下文注入: {list(kg_debate_context.keys())}")
+            except Exception as e:
+                logger.warning(f"KG差异上下文注入失败: {e}")
         
         # 使用辩论协调器进行对抗辩论
         if self.debate_mediator and len(specialist_results) >= 2:
@@ -969,7 +1036,7 @@ class LangGraphDiagnosticGraph:
             referral=state.get('referral_decision', {}),
             debate_process=state.get('debate_state'),
             falsification_log=falsification_entries,
-            knowledge_graph=state.get('hypotheses', []),
+            knowledge_graph=state.get('kg_retrieval_result', None),
             memory_context=state.get('memory_context'),
             guideline_check=state.get('guideline_check_result'),
             hitl_questions=state.get('hitl_questions', []),
@@ -1005,6 +1072,9 @@ class LangGraphDiagnosticGraph:
             guideline_check_result=None,
             referral_decision={},
             final_report={},
+            kg_retrieval_result=None,
+            kg_activation_results=[],
+            kg_degradation_level=0,
             current_phase='init',
             retry_count=0,
             errors=[],

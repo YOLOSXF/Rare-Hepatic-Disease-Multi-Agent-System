@@ -463,6 +463,7 @@ class KGExtractor:
     async def extract(
         self,
         chunks: List[Any],
+        domain_node_ids: Optional[Set[str]] = None,
     ) -> ExtractionResult:
         semaphore = asyncio.Semaphore(self.max_concurrent)
 
@@ -484,7 +485,7 @@ class KGExtractor:
             if isinstance(result, Exception):
                 logger.error(f"Chunk {i} extraction failed: {result}")
             else:
-                merged = self._merge_with_dedup(merged, result)
+                merged = self._merge_with_dedup(merged, result, domain_node_ids=domain_node_ids)
 
         logger.info(
             f"Extraction complete: {len(merged.disease_nodes)} diseases, "
@@ -494,16 +495,22 @@ class KGExtractor:
         return merged
 
     def _merge_with_dedup(
-        self, base: ExtractionResult, new: ExtractionResult
+        self, base: ExtractionResult, new: ExtractionResult,
+        domain_node_ids: Optional[Set[str]] = None,
     ) -> ExtractionResult:
         before_entities = len(base.disease_nodes) + len(base.feature_nodes)
         before_relations = len(base.relation_edges)
+
+        _domain_ids = domain_node_ids or set()
 
         disease_map: Dict[str, DiseaseNode] = {}
         for d in base.disease_nodes:
             disease_map[d.disease_id.upper()] = d
         for d in new.disease_nodes:
             key = d.disease_id.upper()
+            if key in _domain_ids:
+                logger.debug(f"Disease node '{d.disease_id}' conflicts with domain EL1/EL2 node, skipped")
+                continue
             if key in disease_map:
                 existing = disease_map[key]
                 if d.description and (not existing.description or len(d.description) > len(existing.description)):
@@ -661,6 +668,7 @@ class KGExtractor:
                     description=description,
                     source=source_file,
                     source_page=page_number,
+                    metadata={"original_type": raw_type, "type_mapping": "fallback"},
                 ))
 
         for key, edge_data in parsed.get("relationships", {}).items():

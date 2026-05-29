@@ -72,14 +72,20 @@ class DiseasePipeline:
         self.disease_cfg = self._raw_config["disease"]
         self.guidelines_cfg = self._raw_config.get("guidelines", [])
         self.pdf_sources_cfg = self._raw_config.get("pdf_sources", {})
-        self.el1_cfg = self._raw_config.get("el1_nodes", [])
-        self.el2_cfg = self._raw_config.get("el2_nodes", [])
         self.features_cfg = self._raw_config.get("predefined_features", [])
         self.relations_cfg = self._raw_config.get("predefined_relations", [])
         self.differentials_cfg = self._raw_config.get("differentials", [])
         self.contradicts_cfg = self._raw_config.get("contradicts", [])
         self.validation_cfg = self._raw_config.get("validation", {})
         self.extraction_cfg = self._raw_config.get("extraction", {})
+
+        from core.kg.kg_config import load_domain_config
+        domain = load_domain_config()
+        disease_el1 = self._raw_config.get("el1_nodes", [])
+        disease_el2 = self._raw_config.get("el2_nodes", [])
+        merged = domain.merge_with_disease_config(disease_el1, disease_el2)
+        self.el1_cfg = merged.el1_nodes
+        self.el2_cfg = merged.el2_nodes
 
         if output_dir is None:
             project_root = Path(__file__).parent.parent.parent.parent
@@ -131,8 +137,6 @@ class DiseasePipeline:
                 "guidelines_dir": "",
                 "files": [],
             },
-            "el1_nodes": [],
-            "el2_nodes": [],
             "predefined_features": [],
             "predefined_relations": [],
             "differentials": [],
@@ -398,7 +402,7 @@ class DiseasePipeline:
                 logger.info(f"PDF {pdf_path.name} 分为 {len(chunks)} 个chunk")
 
                 result = await self._extractor.extract(
-                    chunks=chunks, source_file=source_name
+                    chunks=chunks
                 )
                 if result.disease_nodes or result.feature_nodes:
                     all_results.append(result)

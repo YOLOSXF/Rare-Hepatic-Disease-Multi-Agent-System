@@ -10,12 +10,12 @@
 # - OPENAI_API_KEY, OPENAI_MODEL, OPENAI_API_BASE
 # - DEEPSEEK_API_KEY, DEEPSEEK_MODEL, DEEPSEEK_API_BASE
 llm:
-  provider: dashscope  # dashscope | openai | deepseek
-  model: tongyi-xiaomi-analysis-pro  # 仅当环境变量未设置时使用
-  api_base: https://dashscope.aliyuncs.com/compatible-mode/v1
+  provider: openai  # dashscope | openai | deepseek
+  model: Qwen/Qwen2.5-32B-Instruct-AWQ  # 仅作为回退，实际以 .env 中 OPENAI_MODEL 为准
+  api_base: ""  # 留空表示从 .env 环境变量 OPENAI_API_BASE 读取
   temperature: 0.1  # 医疗应用需要低温度
-  max_tokens: 2000  # DashScope 限制：1-2000
-  timeout: 60
+  max_tokens: 4000
+  timeout: 120
 
 # Agent 配置
 agents:
@@ -133,7 +133,7 @@ knowledge_graph:
   embedding_model: "BAAI/bge-m3"  # 嵌入模型: BGE-M3 (1024-dim)
   embedding_dim: 1024
   activation:
-    similarity_threshold: 0.5  # 向量检索最低相似度阈值
+    similarity_threshold: 0.2  # 向量检索最低相似度阈值 (BGE-M3 COSINE distance偏高)
     top_k_diseases: 5  # 返回的Top-K候选疾病数
     core_feature_weight: 2.0  # 核心特征(is_core=true)权重
     supporting_feature_weight: 1.0  # 支持特征(is_core=false)权重
@@ -142,3 +142,12 @@ knowledge_graph:
     guideline_verify: false  # KG guided_by关系替代硬编码指南验证
     info_gap: false  # KG IC值/度中心性驱动追问优先级
     debate_context: false  # KG差异上下文注入MDT辩论
+  retrieval:
+    max_context_tokens: 8000  # 检索结果最大token数
+    vector_top_k: 20  # 向量粗排返回数
+    graph_expand_depth: 1  # 图扩展深度(1-hop)
+    graph_expand_limit: 50  # 图扩展最大边数
+  degradation:
+    neo4j_timeout_ms: 3000  # Neo4j连接超时
+    milvus_timeout_ms: 3000  # Milvus连接超时
+    llm_score_prompt: ""  # LLM降级评分prompt(空则使用默认)

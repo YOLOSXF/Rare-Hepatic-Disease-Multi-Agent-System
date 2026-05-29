@@ -56,7 +56,7 @@ async def root():
             "Falsification Engine with conditional back-edge",
             "HITL Interrupt/Resume via langgraph.types.interrupt",
             "Guideline Verification with conditional rollback",
-            "EWAS Graph Update",
+            "KG-Enhanced Diagnosis",
             "MemorySaver checkpoint persistence",
         ],
         "docs": "/docs",

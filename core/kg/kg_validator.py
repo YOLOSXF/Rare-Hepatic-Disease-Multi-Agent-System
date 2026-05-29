@@ -7,9 +7,21 @@
 3. 审核结果记录与导出
 4. YAML交叉参考差异报告
 
+所有疾病特定阈值和关键词通过构造参数传入，本模块不硬编码任何疾病知识。
+
 使用示例：
     from core.kg.kg_validator import KGValidator
-    validator = KGValidator()
+
+    # 从DiseasePipeline配置加载
+    pipeline = DiseasePipeline("data/disease_configs/wilson_disease.yaml")
+    validator = KGValidator.from_pipeline(pipeline)
+
+    # 或手动指定
+    validator = KGValidator(
+        threshold_keywords=["铜蓝蛋白", "ceruloplasmin", ...],
+        known_thresholds={"ceruloplasmin_low": {"value": 0.20, "unit": "g/L"}},
+    )
+
     report = validator.validate(extraction_result)
     validator.export_audit_report(report, "audit_report.json")
 """
@@ -62,27 +74,74 @@ NUMERIC_PATTERN = re.compile(
     r'[<>≤≥＝=]\s*[\d.]+\s*(g/L|μg/L|ng/mL|mg/dL|U/L|μmol/L|mmol/L|%|μg/dL|μg/24h)?'
 )
 
-THRESHOLD_KEYWORDS = [
-    "铜蓝蛋白", "ceruloplasmin", "尿铜", "urinary copper", "24小时尿铜",
-    "转氨酶", "ALT", "AST", "ALP", "GGT", "胆红素", "bilirubin",
-    "铁蛋白", "ferritin", "转铁蛋白饱和度", "transferrin saturation",
-    "凝血", "INR", "白蛋白", "albumin", "血小板", "platelet",
-    "游离铜", "free copper", "青霉胺", "penicillamine", "曲恩汀", "trientine",
-]
-
-
 class KGValidator:
-    def __init__(self, config: Optional[Dict] = None):
+    def __init__(
+        self,
+        config: Optional[Dict] = None,
+        threshold_keywords: Optional[List[str]] = None,
+        known_thresholds: Optional[Dict[str, Any]] = None,
+        yaml_rules_path: Optional[str] = None,
+    ):
         self.config = config or {}
-        self.known_thresholds = self._load_known_thresholds()
+        self.threshold_keywords = threshold_keywords or []
+        self.known_thresholds = known_thresholds or {}
+        self.yaml_rules_path = yaml_rules_path
 
-    def _load_known_thresholds(self) -> Dict[str, Any]:
-        return {
-            "ceruloplasmin_low": {"value": 0.20, "unit": "g/L", "source": "EASL-ERN 2025"},
-            "urinary_copper_24h": {"value": 100, "unit": "μg/24h", "source": "EASL-ERN 2025"},
-            "free_copper": {"value": 20, "unit": "μg/dL", "source": "EASL-ERN 2025"},
-            "alt_elevated": {"value": 40, "unit": "U/L", "source": "通用标准"},
-        }
+    @classmethod
+    def from_pipeline(cls, pipeline: Any) -> "KGValidator":
+        from core.kg.kg_config import load_domain_config
+
+        domain_cfg = load_domain_config()
+        domain_keywords = list(domain_cfg.threshold_keywords)
+        domain_thresholds = dict(domain_cfg.known_thresholds)
+
+        raw_cfg = getattr(pipeline, "_raw_config", {})
+        validation_cfg = raw_cfg.get("validation", {})
+        quality_cfg = raw_cfg.get("quality_tests", {})
+
+        disease_keywords = (
+            validation_cfg.get("threshold_keywords", [])
+            or quality_cfg.get("threshold_keywords", [])
+        )
+
+        disease_id = getattr(pipeline, "disease_id", "")
+        disease_thresholds = domain_thresholds.get(disease_id, {})
+        if not disease_thresholds:
+            disease_thresholds = domain_thresholds.get(disease_id.upper(), {})
+        if not disease_thresholds:
+            disease_thresholds = domain_thresholds.get(disease_id.lower(), {})
+
+        all_keywords = domain_keywords + [
+            kw for kw in disease_keywords if kw not in domain_keywords
+        ]
+
+        yaml_path = validation_cfg.get("yaml_rules_path", None)
+
+        return cls(
+            threshold_keywords=all_keywords,
+            known_thresholds=disease_thresholds,
+            yaml_rules_path=yaml_path,
+        )
+
+    @classmethod
+    def from_domain_config(cls) -> "KGValidator":
+        from core.kg.kg_config import load_domain_config
+
+        domain_cfg = load_domain_config()
+        domain_keywords = list(domain_cfg.threshold_keywords)
+        domain_thresholds = dict(domain_cfg.known_thresholds)
+
+        all_thresholds = {}
+        all_thresholds.update(domain_thresholds.get("general", {}))
+        for disease_id, thresholds in domain_thresholds.items():
+            if disease_id != "general":
+                for key, val in thresholds.items():
+                    all_thresholds[key] = val
+
+        return cls(
+            threshold_keywords=domain_keywords,
+            known_thresholds=all_thresholds,
+        )
 
     def validate(self, extraction_result: ExtractionResult) -> AuditReport:
         report = AuditReport(
@@ -131,8 +190,9 @@ class KGValidator:
 
     def _validate_feature(self, feature: FeatureNode, report: AuditReport) -> None:
         desc = feature.description or ""
+        desc_lower = desc.lower()
         has_numeric_threshold = bool(NUMERIC_PATTERN.search(desc))
-        has_threshold_keyword = any(kw in desc.lower() for kw in THRESHOLD_KEYWORDS)
+        has_threshold_keyword = any(kw.lower() in desc_lower for kw in self.threshold_keywords)
 
         if has_numeric_threshold and has_threshold_keyword:
             confidence = "high"
@@ -173,6 +233,9 @@ class KGValidator:
         ))
 
     def _check_threshold_conflict(self, feature: FeatureNode) -> bool:
+        if not self.known_thresholds:
+            return False
+
         desc = feature.description or ""
         desc_lower = desc.lower()
 
@@ -182,7 +245,7 @@ class KGValidator:
                 for match in matches:
                     try:
                         val = float(match)
-                        expected = threshold_info["value"]
+                        expected = threshold_info.get("value", 0)
                         if abs(val - expected) / max(expected, 0.001) > 0.5:
                             return True
                     except ValueError:
@@ -191,7 +254,19 @@ class KGValidator:
 
     def cross_reference_yaml(self, extraction_result: ExtractionResult) -> List[Dict[str, Any]]:
         differences: List[Dict[str, Any]] = []
-        yaml_path = Path(__file__).parent.parent.parent / "rules" / "rare_diseases.yaml"
+
+        if self.yaml_rules_path:
+            yaml_path = Path(self.yaml_rules_path)
+        else:
+            project_root = Path(__file__).parent.parent.parent
+            disease_configs_dir = project_root / "data" / "disease_configs"
+            if disease_configs_dir.exists():
+                yaml_path = disease_configs_dir
+            else:
+                yaml_path = project_root / "rules" / "rare_diseases.yaml"
+
+        if yaml_path.is_dir():
+            return self._cross_reference_disease_configs(extraction_result, yaml_path)
 
         if not yaml_path.exists():
             logger.warning(f"YAML rules file not found: {yaml_path}")
@@ -238,6 +313,51 @@ class KGValidator:
                             })
 
         logger.info(f"YAML cross-reference: {len(differences)} differences found")
+        return differences
+
+    def _cross_reference_disease_configs(
+        self, extraction_result: ExtractionResult, configs_dir: Path
+    ) -> List[Dict[str, Any]]:
+        import yaml as yaml_lib
+
+        differences: List[Dict[str, Any]] = []
+
+        for config_file in configs_dir.glob("*.yaml"):
+            try:
+                with open(config_file, "r", encoding="utf-8") as f:
+                    cfg = yaml_lib.safe_load(f) or {}
+            except Exception:
+                continue
+
+            disease_cfg = cfg.get("disease", {})
+            disease_name = disease_cfg.get("name", "")
+            if not disease_name:
+                continue
+
+            matching_diseases = [
+                d for d in extraction_result.disease_nodes
+                if disease_name in d.name or d.name in disease_name
+            ]
+            if not matching_diseases:
+                continue
+
+            for feat_cfg in cfg.get("predefined_features", []):
+                feat_name = feat_cfg.get("name", "")
+                feat_desc = feat_cfg.get("description", "")
+
+                for feature in extraction_result.feature_nodes:
+                    if feat_name and feat_name in feature.name:
+                        if feat_desc and feat_desc not in (feature.description or ""):
+                            differences.append({
+                                "type": "feature_description_mismatch",
+                                "config_file": config_file.name,
+                                "config_feature": feat_name,
+                                "config_description": feat_desc[:200],
+                                "kg_feature": feature.name,
+                                "kg_description": (feature.description or "")[:200],
+                            })
+
+        logger.info(f"Disease configs cross-reference: {len(differences)} differences found")
         return differences
 
     def export_audit_report(self, report: AuditReport, output_path: str) -> None:

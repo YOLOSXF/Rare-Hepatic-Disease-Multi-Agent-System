@@ -47,11 +47,11 @@ class HepatologistAgent(BaseAgent):
         differential_diagnosis = []
         
         # 分析肝功能指标
-        alt = labs.get('ALT')
-        ast = labs.get('AST')
-        tbil = labs.get('TBil')
-        dbil = labs.get('DBil')
-        albumin = labs.get('Albumin')
+        alt = labs.get('ALT', labs.get('Alt'))
+        ast = labs.get('AST', labs.get('Ast'))
+        tbil = labs.get('TBIL', labs.get('TBil'))
+        dbil = labs.get('DBIL', labs.get('DBil'))
+        albumin = labs.get('albumin', labs.get('Albumin'))
         
         if alt and alt > 40:
             findings.append(f"ALT升高 ({alt} U/L)，提示肝细胞损伤")
@@ -63,7 +63,7 @@ class HepatologistAgent(BaseAgent):
             findings.append(f"白蛋白降低 ({albumin} g/L)，提示肝脏合成功能受损")
         
         # 分析肝病特异性指标
-        ceruloplasmin = labs.get('Ceruloplasmin')
+        ceruloplasmin = labs.get('ceruloplasmin', labs.get('Ceruloplasmin'))
         if ceruloplasmin is not None:
             if ceruloplasmin < 0.1:
                 findings.append("铜蓝蛋白显著降低，高度提示Wilson病")

@@ -163,7 +163,7 @@ class MDTFinalReport(ReportBase):
     referral: Dict[str, Any]
     debate_process: Optional[Dict]
     falsification_log: List[Any]
-    knowledge_graph: List[Any]
+    knowledge_graph: Optional[Dict[str, Any]]
     memory_context: Optional[Dict]
     guideline_check: Optional[Any]
     hitl_questions: List[Any]
@@ -262,6 +262,11 @@ class DiagnosticState(TypedDict):
     # ===== 转诊与输出 =====
     referral_decision: Dict[str, Any]
     final_report: Optional[FinalReport]
+    
+    # ===== 知识图谱集成 =====
+    kg_retrieval_result: Optional[Dict[str, Any]]
+    kg_activation_results: List[Dict[str, Any]]
+    kg_degradation_level: int
     
     # ===== 流程控制 =====
     current_phase: str

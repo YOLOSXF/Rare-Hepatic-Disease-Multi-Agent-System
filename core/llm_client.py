@@ -56,7 +56,7 @@ def load_llm_config(config_path: str = "config.yaml") -> Dict[str, Any]:
     """
     config = {}
 
-    # 1. 从 .env 环境变量读取
+    # 1. 从 .env 环境变量读取（优先 DashScope，其次 OpenAI）
     env_config = {
         "api_key": os.getenv("DASHSCOPE_API_KEY"),
         "model": os.getenv("DASHSCOPE_MODEL"),
@@ -66,6 +66,21 @@ def load_llm_config(config_path: str = "config.yaml") -> Dict[str, Any]:
     }
     # 过滤掉 None 值
     config = {k: v for k, v in env_config.items() if v is not None}
+
+    # 如果 DashScope 未配置，尝试 OpenAI 环境变量
+    if "api_key" not in config:
+        openai_key = os.getenv("OPENAI_API_KEY")
+        if openai_key:
+            config["api_key"] = openai_key
+            # 使用 OpenAI 时，model 和 api_base 也优先从 OpenAI 环境变量读取
+            if "model" not in config:
+                openai_model = os.getenv("OPENAI_MODEL")
+                if openai_model:
+                    config["model"] = openai_model
+            if "api_base" not in config:
+                openai_base = os.getenv("OPENAI_API_BASE")
+                if openai_base:
+                    config["api_base"] = openai_base
 
     # 2. 从 config.yaml 读取（作为回退）
     try:
@@ -78,17 +93,23 @@ def load_llm_config(config_path: str = "config.yaml") -> Dict[str, Any]:
             if llm_section:
                 # 只在环境变量未设置时使用 yaml 配置
                 if "api_key" not in config:
-                    api_key = llm_section.get('api_key') or os.getenv("OPENAI_API_KEY")
+                    api_key = llm_section.get('api_key')
                     if api_key:
                         config["api_key"] = api_key
                 if "model" not in config:
-                    model = llm_section.get('model') or os.getenv("OPENAI_MODEL")
+                    model = llm_section.get('model')
                     if model:
                         config["model"] = model
                 if "api_base" not in config:
-                    api_base = llm_section.get('api_base') or os.getenv("OPENAI_API_BASE")
+                    api_base = llm_section.get('api_base')
+                    # 空字符串或 None 时回退到环境变量
                     if api_base:
                         config["api_base"] = api_base
+                    else:
+                        # config.yaml api_base 为空，从环境变量读取
+                        env_base = os.getenv("OPENAI_API_BASE") or os.getenv("DASHSCOPE_API_BASE")
+                        if env_base:
+                            config["api_base"] = env_base
                 if "temperature" not in config:
                     config["temperature"] = str(llm_section.get('temperature', 0.1))
                 if "max_tokens" not in config:

@@ -2,38 +2,44 @@
 信息缺口评估与精准追问
 
 基于竞争假设识别鉴别诊断中的关键缺失证据，生成精准追问问题。
+
+KG集成:
+- integration.info_gap=true: 使用 KG get_info_gap_priority() 替代硬编码追问规则
+- integration.info_gap=false: 回退到原有硬编码规则
+- kg_interface=None: 回退到原有硬编码规则
 """
 
 from typing import Any, Dict, List, Optional
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
+from loguru import logger
 
 
 class QuestionPriority(Enum):
     """问题优先级"""
-    CRITICAL = "critical"    # 关键缺证，必须补充
-    HIGH = "high"           # 重要缺证，强烈建议补充
-    MEDIUM = "medium"       # 一般缺证，建议补充
-    LOW = "low"             # 参考性缺证，可选补充
+    CRITICAL = "critical"
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
 
 
 @dataclass
 class GapQuestion:
     """缺口问题"""
-    field: str                      # 字段名
-    question: str                   # 问题内容
-    rationale: str                  # 追问理由
-    priority: QuestionPriority      # 优先级
-    related_disease: str            # 相关疾病
-    expected_test: str              # 推荐检查
+    field: str
+    question: str
+    rationale: str
+    priority: QuestionPriority
+    related_disease: str
+    expected_test: str
 
 
 @dataclass
 class GapAssessmentResult:
     """缺口评估结果"""
-    has_gaps: bool                  # 是否存在缺口
-    questions: List[GapQuestion]    # 追问问题列表
-    gap_summary: str                # 缺口摘要
+    has_gaps: bool
+    questions: List[GapQuestion]
+    gap_summary: str
 
 
 class InformationGapAssessor:
@@ -44,43 +50,37 @@ class InformationGapAssessor:
     1. 基于竞争假设识别关键缺证
     2. 生成精准追问问题（限2轮防骚扰）
     3. 评估是否满足鉴别诊断要求
+    
+    KG集成路径:
+    - kg_interface + integration.info_gap → KG get_info_gap_priority()
+    - 降级路径 → 原有硬编码 if-elif 规则
     """
     
-    def __init__(self, max_questions_per_round: int = 3, max_rounds: int = 2):
+    def __init__(
+        self,
+        max_questions_per_round: int = 3,
+        max_rounds: int = 2,
+        kg_interface: Optional[Any] = None,
+    ):
         self.max_questions_per_round = max_questions_per_round
         self.max_rounds = max_rounds
+        self.kg_interface = kg_interface
     
     def assess(
         self,
         hypotheses: List[Dict[str, Any]],
         patient_data: Dict[str, Any]
     ) -> GapAssessmentResult:
-        """
-        评估信息缺口
-        
-        Args:
-            hypotheses: 诊断假设列表
-            patient_data: 患者数据
-            
-        Returns:
-            GapAssessmentResult: 缺口评估结果
-        """
         questions = []
         
-        # 基于假设识别缺失的关键证据
         for hypothesis in hypotheses:
             disease = hypothesis.get('disease', '')
-            
-            # 根据疾病类型确定关键缺证
             disease_questions = self._generate_disease_specific_questions(
                 disease, patient_data
             )
             questions.extend(disease_questions)
         
-        # 去重并排序
         questions = self._deduplicate_and_sort(questions)
-        
-        # 限制问题数量
         questions = questions[:self.max_questions_per_round]
         
         has_gaps = len(questions) > 0
@@ -92,14 +92,6 @@ class InformationGapAssessor:
         )
     
     def should_interrupt(self, gap_result: GapAssessmentResult) -> bool:
-        """
-        判断是否应中断（HITL挂起）
-        
-        规则：
-        - 存在 CRITICAL 级别缺证：必须挂起
-        - 存在 HIGH 级别缺证：建议挂起
-        - 只有 MEDIUM/LOW 级别：不挂起，记录建议
-        """
         for q in gap_result.questions:
             if q.priority in (QuestionPriority.CRITICAL, QuestionPriority.HIGH):
                 return True
@@ -110,12 +102,87 @@ class InformationGapAssessor:
         disease: str,
         patient_data: Dict
     ) -> List[GapQuestion]:
-        """生成疾病特定的追问问题"""
+        """生成疾病特定的追问问题（优先KG路径，降级到硬编码路径）"""
+        
+        if self.kg_interface and self.kg_interface.is_enabled():
+            try:
+                kg_config = self.kg_interface.config
+                if kg_config.integration.info_gap:
+                    questions = self._generate_questions_via_kg(disease, patient_data)
+                    if questions is not None:
+                        logger.info(f"KG追问路径: disease={disease}, questions={len(questions)}")
+                        return questions
+            except Exception as e:
+                logger.warning(f"KG追问路径失败，降级到硬编码: {e}")
+        
+        return self._generate_questions_via_hardcoded(disease, patient_data)
+    
+    def _generate_questions_via_kg(
+        self, disease: str, patient_data: Dict
+    ) -> Optional[List[GapQuestion]]:
+        gap_features = self.kg_interface.get_info_gap_priority(patient_data)
+
+        if not gap_features:
+            return None
+
+        questions = []
+        for feature_name in gap_features[:self.max_questions_per_round * 2]:
+            priority = QuestionPriority.HIGH
+
+            try:
+                if self.kg_interface:
+                    query = """
+                    MATCH (f:Feature {name: $name})
+                    RETURN f.is_core AS is_core, f.specificity AS specificity
+                    LIMIT 1
+                    """
+                    results = self.kg_interface._run_neo4j_query(query, {"name": feature_name})
+                    if results:
+                        record = results[0]
+                        is_core = record.get("is_core", False)
+                        if is_core:
+                            priority = QuestionPriority.CRITICAL
+                else:
+                    from core.kg.kg_config import KGConfig
+                    config = KGConfig.from_yaml()
+                    driver = config.get_neo4j_driver()
+                    with driver.session(database=config.neo4j.database) as session:
+                        result = session.run(
+                            """
+                            MATCH (f:Feature {name: $name})
+                            RETURN f.is_core AS is_core, f.specificity AS specificity
+                            LIMIT 1
+                            """,
+                            {"name": feature_name}
+                        )
+                        record = result.single()
+                        if record:
+                            is_core = record.get("is_core", False)
+                            if is_core:
+                                priority = QuestionPriority.CRITICAL
+                    driver.close()
+            except Exception:
+                pass
+
+            questions.append(GapQuestion(
+                field=feature_name,
+                question=f"请提供{feature_name}相关检查结果",
+                rationale=f"{feature_name}是{disease}鉴别诊断的关键指标",
+                priority=priority,
+                related_disease=disease,
+                expected_test=feature_name,
+            ))
+
+        return questions
+    
+    def _generate_questions_via_hardcoded(
+        self, disease: str, patient_data: Dict
+    ) -> List[GapQuestion]:
         questions = []
         labs = patient_data.get('labs', {})
-        symptoms = patient_data.get('symptoms', {})
+        symptoms_raw = patient_data.get('symptoms', {})
+        symptoms = symptoms_raw if isinstance(symptoms_raw, dict) else {}
         
-        # Wilson病关键缺证
         if 'Wilson' in disease or 'wilson' in disease.lower():
             if 'ceruloplasmin' not in labs:
                 questions.append(GapQuestion(
@@ -136,7 +203,6 @@ class InformationGapAssessor:
                     expected_test="眼科裂隙灯检查"
                 ))
         
-        # PBC关键缺证
         if 'PBC' in disease or '胆汁性' in disease:
             if 'AMA_M2' not in labs:
                 questions.append(GapQuestion(
@@ -148,7 +214,6 @@ class InformationGapAssessor:
                     expected_test="AMA-M2抗体"
                 ))
         
-        # 血色病关键缺证
         if '血色病' in disease or 'hemochromatosis' in disease.lower():
             if 'Ferritin' not in labs:
                 questions.append(GapQuestion(
@@ -163,8 +228,6 @@ class InformationGapAssessor:
         return questions
     
     def _deduplicate_and_sort(self, questions: List[GapQuestion]) -> List[GapQuestion]:
-        """去重并排序"""
-        # 按 field 去重
         seen = set()
         unique = []
         for q in questions:
@@ -172,7 +235,6 @@ class InformationGapAssessor:
                 seen.add(q.field)
                 unique.append(q)
         
-        # 按优先级排序
         priority_order = {
             QuestionPriority.CRITICAL: 0,
             QuestionPriority.HIGH: 1,

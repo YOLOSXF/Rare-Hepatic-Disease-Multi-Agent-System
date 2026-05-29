@@ -570,7 +570,7 @@
           <template #title>
             <div class="collapse-title">
               <el-icon class="collapse-icon-info"><Share /></el-icon>
-              <span class="collapse-title-text">知识图谱权重</span>
+              <span class="collapse-title-text">知识图谱检索结果</span>
             </div>
           </template>
           <div class="graph-weights">

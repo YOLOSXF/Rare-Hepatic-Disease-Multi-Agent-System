@@ -95,7 +95,7 @@ async def diagnose(patient_input: PatientInput):
             for d in diff_diag[:3]
         ] if has_dict_diag else [str(d) for d in diff_diag[:3]],
         referral_recommendation=referral if referral else None,
-        follow_up_plan=result.get('follow_up_plan', {}),
+        follow_up_plan=result.get('follow_up_plan') or {},
         # LLM 生成的分析字段（来自 L5 报告节点）
         metadata={
             'data_completeness': result.get('data_completeness_score', 0),

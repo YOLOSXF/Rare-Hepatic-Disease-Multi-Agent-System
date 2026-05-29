@@ -63,7 +63,7 @@ class MedicalChunker:
     def __init__(
         self,
         max_token_size: int = MAX_TOKEN_SIZE,
-        overlap_tokens: int = 50,
+        overlap_tokens: int = 100,
         use_semantic_boundary: bool = True,
     ):
         self.max_token_size = max_token_size

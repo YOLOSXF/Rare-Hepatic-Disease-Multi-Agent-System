@@ -118,7 +118,7 @@
             <li>Falsification Engine</li>
             <li>HITL Interrupt/Resume</li>
             <li>Guideline Verification</li>
-            <li>EWAS Graph Update</li>
+            <li>KG-Enhanced Diagnosis</li>
           </ul>
         </el-descriptions-item>
         <el-descriptions-item label="报告类型">

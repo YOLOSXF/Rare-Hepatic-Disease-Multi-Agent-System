@@ -6,12 +6,17 @@
 2. 提供KG各组件的统一配置访问
 3. 支持Feature Flag控制KG功能开关
 4. 提供Neo4j/Milvus连接参数
+5. 加载领域配置（EL1/EL2分类体系）
 
 使用示例：
     from core.kg.kg_config import KGConfig
     config = KGConfig.from_yaml()
     if config.enabled:
         driver = config.get_neo4j_driver()
+
+    from core.kg.kg_config import load_domain_config
+    domain = load_domain_config()
+    el1_nodes = domain.get_el1_nodes()
 """
 
 import os
@@ -91,6 +96,21 @@ class IntegrationConfig:
 
 
 @dataclass
+class RetrievalConfig:
+    max_context_tokens: int = 8000
+    vector_top_k: int = 20
+    graph_expand_depth: int = 1
+    graph_expand_limit: int = 50
+
+
+@dataclass
+class DegradationConfig:
+    neo4j_timeout_ms: int = 3000
+    milvus_timeout_ms: int = 3000
+    llm_score_prompt: str = ""
+
+
+@dataclass
 class KGConfig:
     enabled: bool = False
     engine: str = "networkx"
@@ -99,6 +119,8 @@ class KGConfig:
     embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
     activation: ActivationConfig = field(default_factory=ActivationConfig)
     integration: IntegrationConfig = field(default_factory=IntegrationConfig)
+    retrieval: RetrievalConfig = field(default_factory=RetrievalConfig)
+    degradation: DegradationConfig = field(default_factory=DegradationConfig)
 
     def get_neo4j_driver(self):
         return self.neo4j.get_driver()
@@ -199,6 +221,21 @@ class KGConfig:
             debate_context=integration_raw.get("debate_context", False),
         )
 
+        retrieval_raw = kg_raw.get("retrieval", {})
+        retrieval_cfg = RetrievalConfig(
+            max_context_tokens=retrieval_raw.get("max_context_tokens", 8000),
+            vector_top_k=retrieval_raw.get("vector_top_k", 20),
+            graph_expand_depth=retrieval_raw.get("graph_expand_depth", 1),
+            graph_expand_limit=retrieval_raw.get("graph_expand_limit", 50),
+        )
+
+        degradation_raw = kg_raw.get("degradation", {})
+        degradation_cfg = DegradationConfig(
+            neo4j_timeout_ms=degradation_raw.get("neo4j_timeout_ms", 3000),
+            milvus_timeout_ms=degradation_raw.get("milvus_timeout_ms", 3000),
+            llm_score_prompt=degradation_raw.get("llm_score_prompt", ""),
+        )
+
         config = cls(
             enabled=kg_raw.get("enabled", False),
             engine=kg_raw.get("engine", ""),
@@ -207,6 +244,8 @@ class KGConfig:
             embedding=embedding_cfg,
             activation=activation_cfg,
             integration=integration_cfg,
+            retrieval=retrieval_cfg,
+            degradation=degradation_cfg,
         )
 
         if not config.engine or config.engine == "networkx":
@@ -217,3 +256,102 @@ class KGConfig:
             f"neo4j={config.neo4j.url}, milvus={config.milvus.host}:{config.milvus.port}"
         )
         return config
+
+
+@dataclass
+class DomainConfig:
+    domain_name: str = ""
+    domain_name_en: str = ""
+    el1_nodes: list = field(default_factory=list)
+    el2_nodes: list = field(default_factory=list)
+    threshold_keywords: list = field(default_factory=list)
+    known_thresholds: dict = field(default_factory=dict)
+
+    def get_el1_nodes(self) -> list:
+        return self.el1_nodes
+
+    def get_el2_nodes(self) -> list:
+        return self.el2_nodes
+
+    def get_all_node_ids(self) -> set:
+        ids = set()
+        for n in self.el1_nodes:
+            ids.add(n.get("id", "").upper())
+        for n in self.el2_nodes:
+            ids.add(n.get("id", "").upper())
+        return ids
+
+    def merge_with_disease_config(
+        self, disease_el1: list, disease_el2: list
+    ) -> "DomainConfig":
+        existing_el1_ids = {n.get("id", "").upper() for n in self.el1_nodes}
+        existing_el2_ids = {n.get("id", "").upper() for n in self.el2_nodes}
+
+        merged_el1 = list(self.el1_nodes)
+        for n in disease_el1:
+            if n.get("id", "").upper() not in existing_el1_ids:
+                merged_el1.append(n)
+                existing_el1_ids.add(n.get("id", "").upper())
+
+        merged_el2 = list(self.el2_nodes)
+        for n in disease_el2:
+            if n.get("id", "").upper() not in existing_el2_ids:
+                merged_el2.append(n)
+                existing_el2_ids.add(n.get("id", "").upper())
+
+        return DomainConfig(
+            domain_name=self.domain_name,
+            domain_name_en=self.domain_name_en,
+            el1_nodes=merged_el1,
+            el2_nodes=merged_el2,
+        )
+
+
+_domain_config_cache: Optional[DomainConfig] = None
+
+
+def load_domain_config(config_path: Optional[str] = None) -> DomainConfig:
+    global _domain_config_cache
+    if _domain_config_cache is not None:
+        return _domain_config_cache
+
+    if config_path is None:
+        project_root = Path(__file__).parent.parent.parent
+        config_path = str(project_root / "data" / "domain_configs" / "rare_liver_disease.yaml")
+
+    if not Path(config_path).exists():
+        logger.warning(f"Domain config not found: {config_path}")
+        _domain_config_cache = DomainConfig()
+        return _domain_config_cache
+
+    if not YAML_AVAILABLE:
+        logger.warning("PyYAML not installed, domain config unavailable")
+        _domain_config_cache = DomainConfig()
+        return _domain_config_cache
+
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+    except Exception as e:
+        logger.error(f"Failed to load domain config: {e}")
+        _domain_config_cache = DomainConfig()
+        return _domain_config_cache
+
+    domain_raw = data.get("domain", {})
+    config = DomainConfig(
+        domain_name=domain_raw.get("name", ""),
+        domain_name_en=domain_raw.get("name_en", ""),
+        el1_nodes=data.get("el1_nodes", []),
+        el2_nodes=data.get("el2_nodes", []),
+        threshold_keywords=data.get("threshold_keywords", []),
+        known_thresholds=data.get("known_thresholds", {}),
+    )
+
+    logger.info(
+        f"Domain config loaded: {config.domain_name}, "
+        f"EL1={len(config.el1_nodes)}, EL2={len(config.el2_nodes)}, "
+        f"keywords={len(config.threshold_keywords)}, "
+        f"thresholds={len(config.known_thresholds)}"
+    )
+    _domain_config_cache = config
+    return config
