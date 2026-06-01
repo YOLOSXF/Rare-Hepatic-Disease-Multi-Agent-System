@@ -84,7 +84,7 @@ class DebateMediator:
         # 第一轮：各专科提出初始观点
         round1_messages = []
         for result in specialist_results:
-            if not result.get('success'):
+            if result.get('success') is False:
                 continue
             
             data = result.get('data', {})

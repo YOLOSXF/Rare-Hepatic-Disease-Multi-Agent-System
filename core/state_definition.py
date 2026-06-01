@@ -163,7 +163,7 @@ class MDTFinalReport(ReportBase):
     referral: Dict[str, Any]
     debate_process: Optional[Dict]
     falsification_log: List[Any]
-    knowledge_graph: Optional[Dict[str, Any]]
+    kg_retrieval_result: Optional[Dict[str, Any]]
     memory_context: Optional[Dict]
     guideline_check: Optional[Any]
     hitl_questions: List[Any]
@@ -265,12 +265,13 @@ class DiagnosticState(TypedDict):
     
     # ===== 知识图谱集成 =====
     kg_retrieval_result: Optional[Dict[str, Any]]
-    kg_activation_results: List[Dict[str, Any]]
     kg_degradation_level: int
+    kg_rare_disease_signal: Optional[float]
     
     # ===== 流程控制 =====
     current_phase: str
     retry_count: int
+    debate_round: int
     errors: Annotated[List[str], operator.add]
 
 

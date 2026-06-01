@@ -566,7 +566,7 @@
         </el-collapse-item>
 
         <!-- 知识图谱 -->
-        <el-collapse-item v-if="report.knowledge_graph && Object.keys(report.knowledge_graph).length" name="graph" title="">
+        <el-collapse-item v-if="report.kg_retrieval_result && Object.keys(report.kg_retrieval_result).length" name="graph" title="">
           <template #title>
             <div class="collapse-title">
               <el-icon class="collapse-icon-info"><Share /></el-icon>
@@ -575,7 +575,7 @@
           </template>
           <div class="graph-weights">
             <div
-              v-for="(value, key) in report.knowledge_graph"
+              v-for="(value, key) in report.kg_retrieval_result"
               :key="key"
               class="weight-item"
             >

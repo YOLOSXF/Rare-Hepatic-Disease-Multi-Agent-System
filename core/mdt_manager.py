@@ -105,6 +105,7 @@ class MDTManager:
             if result and result.success:
                 output.append({
                     'specialty': team.team_specialties[i],
+                    'success': True,
                     'data': result.data,
                 })
         

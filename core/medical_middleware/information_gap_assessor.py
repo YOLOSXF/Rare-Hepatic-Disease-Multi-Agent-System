@@ -131,36 +131,12 @@ class InformationGapAssessor:
 
             try:
                 if self.kg_interface:
-                    query = """
-                    MATCH (f:Feature {name: $name})
-                    RETURN f.is_core AS is_core, f.specificity AS specificity
-                    LIMIT 1
-                    """
-                    results = self.kg_interface._run_neo4j_query(query, {"name": feature_name})
+                    results = self.kg_interface.query_feature_details(feature_name)
                     if results:
                         record = results[0]
                         is_core = record.get("is_core", False)
                         if is_core:
                             priority = QuestionPriority.CRITICAL
-                else:
-                    from core.kg.kg_config import KGConfig
-                    config = KGConfig.from_yaml()
-                    driver = config.get_neo4j_driver()
-                    with driver.session(database=config.neo4j.database) as session:
-                        result = session.run(
-                            """
-                            MATCH (f:Feature {name: $name})
-                            RETURN f.is_core AS is_core, f.specificity AS specificity
-                            LIMIT 1
-                            """,
-                            {"name": feature_name}
-                        )
-                        record = result.single()
-                        if record:
-                            is_core = record.get("is_core", False)
-                            if is_core:
-                                priority = QuestionPriority.CRITICAL
-                    driver.close()
             except Exception:
                 pass
 

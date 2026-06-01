@@ -390,6 +390,7 @@ class SourceCitation:
     guideline: str
     section: Optional[str] = None
     original_text: Optional[str] = None
+    evidence_text: Optional[str] = None
 
 
 @dataclass
@@ -421,7 +422,7 @@ class KGRetrievalResult:
                 for r in self.relevant_relations
             ],
             "source_citations": [
-                {"guideline": c.guideline, "section": c.section, "original_text": c.original_text}
+                {"guideline": c.guideline, "section": c.section, "original_text": c.original_text, "evidence_text": c.evidence_text}
                 for c in self.source_citations
             ],
             "retrieval_latency_ms": self.retrieval_latency_ms,

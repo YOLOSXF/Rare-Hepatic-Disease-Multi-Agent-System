@@ -139,16 +139,7 @@ class GuidelineVerifier:
 
         try:
             if self.kg_interface:
-                query = """
-                MATCH (d:Disease)-[r:HAS_DIAGNOSTIC_KEY]->(f:Feature)
-                WHERE d.name = $diagnosis OR d.id = $diagnosis
-                RETURN f.name AS name, f.is_core AS is_core
-                UNION
-                MATCH (d:Disease)-[r:HAS_MANIFESTATION]->(f:Feature)
-                WHERE d.name = $diagnosis OR d.id = $diagnosis
-                RETURN f.name AS name, f.is_core AS is_core
-                """
-                results = self.kg_interface._run_neo4j_query(query, {"diagnosis": diagnosis})
+                results = self.kg_interface.query_criteria_for_diagnosis(diagnosis)
                 for r in results:
                     name = r.get("name", "")
                     is_core = r.get("is_core", False)
@@ -157,32 +148,6 @@ class GuidelineVerifier:
                             required.append(name)
                         else:
                             supportive.append(name)
-            else:
-                from core.kg.kg_config import KGConfig
-                config = KGConfig.from_yaml()
-                driver = config.get_neo4j_driver()
-                with driver.session(database=config.neo4j.database) as session:
-                    result = session.run(
-                        """
-                        MATCH (d:Disease)-[r:HAS_DIAGNOSTIC_KEY]->(f:Feature)
-                        WHERE d.name = $diagnosis OR d.id = $diagnosis
-                        RETURN f.name AS name, f.is_core AS is_core
-                        UNION
-                        MATCH (d:Disease)-[r:HAS_MANIFESTATION]->(f:Feature)
-                        WHERE d.name = $diagnosis OR d.id = $diagnosis
-                        RETURN f.name AS name, f.is_core AS is_core
-                        """,
-                        {"diagnosis": diagnosis}
-                    )
-                    for record in result:
-                        name = record.get("name", "")
-                        is_core = record.get("is_core", False)
-                        if name:
-                            if is_core:
-                                required.append(name)
-                            else:
-                                supportive.append(name)
-                driver.close()
         except Exception as e:
             logger.warning(f"_get_criteria_from_kg failed: {e}")
 

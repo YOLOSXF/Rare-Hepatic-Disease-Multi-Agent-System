@@ -228,7 +228,12 @@ class LangGraphDiagnosticGraph:
         return "uncertain_fallback"
     
     def _route_after_falsification(self, state: DiagnosticState) -> str:
-        """证伪后路由：被证伪则回退重辩论"""
+        """证伪后路由：被证伪则回退重辩论（受 debate_round 限制）"""
+        debate_round = state.get('debate_round', 0)
+        if debate_round >= self.max_debate_rounds:
+            logger.info(f"辩论轮次已达上限 ({debate_round}/{self.max_debate_rounds})，进入信息缺口评估")
+            return "hitl_gap_assess"
+
         retry_count = state.get('retry_count', 0)
         if retry_count >= self.max_falsification_retries:
             return "hitl_gap_assess"
@@ -251,7 +256,12 @@ class LangGraphDiagnosticGraph:
         return "guideline_verify"
     
     def _route_after_guideline(self, state: DiagnosticState) -> str:
-        """指南守门后路由：不合规则打回重辩论"""
+        """指南守门后路由：不合规则打回重辩论（受 debate_round 限制）"""
+        debate_round = state.get('debate_round', 0)
+        if debate_round >= self.max_debate_rounds:
+            logger.info(f"辩论轮次已达上限 ({debate_round}/{self.max_debate_rounds})，指南不合规但仍进入转诊决策")
+            return "referral_decision"
+
         check = state.get('guideline_check_result')
         if check is None:
             return "referral_decision"
@@ -360,7 +370,7 @@ class LangGraphDiagnosticGraph:
         }
     
     async def _node_triage(self, state: DiagnosticState) -> Dict[str, Any]:
-        """L2: 分诊（支持数据评估短路拦截）"""
+        """L2: 分诊（支持数据评估短路拦截 + KG罕见病信号注入）"""
         logger.info("=== L2: Triage ===")
 
         # 提取数据评估结果，打包传递给 Triage 引擎
@@ -387,10 +397,10 @@ class LangGraphDiagnosticGraph:
             path_map = {
                 'common': 'common_fast_path',
                 'rare': 'rare_deep_path',
-                'insufficient_data': 'uncertain',  # 数据不足时跳转到 uncertain
+                'insufficient_data': 'uncertain',
                 'uncertain': 'uncertain',
             }
-            return {
+            result = {
                 'triage_result': {
                     'path': path_map.get(triage_result.path, 'uncertain'),
                     'diagnosis': getattr(triage_result, 'diagnosis', None),
@@ -403,20 +413,48 @@ class LangGraphDiagnosticGraph:
                 },
                 'current_phase': 'triage',
             }
+        else:
+            result = {
+                'triage_result': {
+                    'path': 'uncertain',
+                    'diagnosis': None,
+                    'confidence': 0.3,
+                    'confidence_level': 'low',
+                    'is_rare_disease_alert': False,
+                    'urgency': 'routine',
+                    'recommended_tests': [],
+                    'uncertainty_reason': None,
+                },
+                'current_phase': 'triage',
+            }
 
-        return {
-            'triage_result': {
-                'path': 'uncertain',
-                'diagnosis': None,
-                'confidence': 0.3,
-                'confidence_level': 'low',
-                'is_rare_disease_alert': False,
-                'urgency': 'routine',
-                'recommended_tests': [],
-                'uncertainty_reason': None,
-            },
-            'current_phase': 'triage',
-        }
+        # KG罕见病信号注入
+        if self.kg_interface and self.kg_interface.is_enabled():
+            try:
+                patient_data = state['patient_data']
+                retrieval_result, activation_results = self.kg_interface.retrieve_and_classify(
+                    patient_data, triage_hint=None
+                )
+                if activation_results:
+                    top_activation = activation_results[0]
+                    activation_score = top_activation.activation_score
+                    current_path = result['triage_result']['path']
+                    if activation_score > 0.3 and current_path != 'rare_deep_path':
+                        logger.warning(
+                            f"KG罕见病信号: 顶级候选 '{top_activation.disease_name}' "
+                            f"激活分数={activation_score:.3f} 超过阈值0.3, "
+                            f"当前分诊路径={current_path}"
+                        )
+                        result['kg_rare_disease_signal'] = activation_score
+                    else:
+                        logger.info(
+                            f"KG分诊辅助: 顶级候选 '{top_activation.disease_name}' "
+                            f"激活分数={activation_score:.3f}"
+                        )
+            except Exception as e:
+                logger.warning(f"KG罕见病信号注入失败: {e}")
+
+        return result
     
     async def _node_common_fast_path(self, state: DiagnosticState) -> Dict[str, Any]:
         """常见病快速路径"""
@@ -456,9 +494,6 @@ class LangGraphDiagnosticGraph:
                 updates['kg_retrieval_result'] = (
                     retrieval_result.to_dict() if hasattr(retrieval_result, 'to_dict') else {}
                 )
-                updates['kg_activation_results'] = [
-                    a.to_dict() if hasattr(a, 'to_dict') else a for a in activation_results
-                ]
                 updates['kg_degradation_level'] = retrieval_result.degradation_level
                 
                 logger.info(
@@ -468,7 +503,6 @@ class LangGraphDiagnosticGraph:
             except Exception as e:
                 logger.warning(f"KG激活失败，降级跳过: {e}")
                 updates['kg_retrieval_result'] = None
-                updates['kg_activation_results'] = []
                 updates['kg_degradation_level'] = 0
         
         return updates
@@ -502,7 +536,8 @@ class LangGraphDiagnosticGraph:
         
         updates: Dict[str, Any] = {
             'current_phase': 'mdt_debate', 
-            'retry_count': state.get('retry_count', 0) + 1
+            'retry_count': state.get('retry_count', 0) + 1,
+            'debate_round': state.get('debate_round', 0) + 1,
         }
         
         if self.kg_interface and self.kg_interface.is_enabled():
@@ -655,27 +690,33 @@ class LangGraphDiagnosticGraph:
             ]
             
             if self.gap_assessor.should_interrupt(gap_result) and questions_list:
-                updates['hitl_status'] = 'interrupted'
-                updates['hitl_questions'] = questions_list
-                
-                try:
-                    interrupt({
-                        'hitl_questions': [
-                            {
-                                'field': q.field,
-                                'question': q.question,
-                                'rationale': q.rationale,
-                                'priority': q.priority,
-                                'related_disease': q.related_disease,
-                                'recommended_test': q.recommended_test,
-                            }
-                            for q in questions_list
-                        ],
-                        'message': '需要补充关键检查数据以完成鉴别诊断',
-                    })
-                    updates['hitl_status'] = 'resumed'
-                except Exception:
-                    pass
+                debate_round = state.get('debate_round', 0)
+                if debate_round >= self.max_debate_rounds:
+                    updates['hitl_status'] = 'normal'
+                    updates['hitl_questions'] = questions_list
+                    logger.info(f"辩论轮次已达上限 ({debate_round}/{self.max_debate_rounds})，跳过HITL interrupt，记录问题后继续")
+                else:
+                    updates['hitl_status'] = 'interrupted'
+                    updates['hitl_questions'] = questions_list
+                    
+                    try:
+                        interrupt({
+                            'hitl_questions': [
+                                {
+                                    'field': q.field,
+                                    'question': q.question,
+                                    'rationale': q.rationale,
+                                    'priority': q.priority,
+                                    'related_disease': q.related_disease,
+                                    'recommended_test': q.recommended_test,
+                                }
+                                for q in questions_list
+                            ],
+                            'message': '需要补充关键检查数据以完成鉴别诊断',
+                        })
+                        updates['hitl_status'] = 'resumed'
+                    except Exception:
+                        pass
             
             else:
                 updates['hitl_status'] = 'normal'
@@ -1021,6 +1062,23 @@ class LangGraphDiagnosticGraph:
 
         triage_result = state.get('triage_result', {})
 
+        clinical_summary = None
+        if sorted_hyp:
+            top = sorted_hyp[0]
+            debate = state.get('debate_state') or {}
+            consensus = debate.get('consensus_points', [])
+            disagreements = debate.get('disagreements', [])
+            clinical_summary = (
+                f"MDT多专科会诊结论：首要诊断考虑{top.get('disease', '未知')}（置信度{top.get('confidence', 0):.0%}）。"
+                f"支持证据：{'；'.join(top.get('supporting_evidence', [])[:3])}。"
+            )
+            if consensus:
+                clinical_summary += f"共识点：{'；'.join(consensus[:3])}。"
+            if disagreements:
+                clinical_summary += f"分歧点：{'；'.join(disagreements[:3])}。"
+            if state.get('hitl_questions'):
+                clinical_summary += f"尚需补充{len(state['hitl_questions'])}项关键检查数据以明确诊断。"
+
         report: MDTFinalReport = MDTFinalReport(
             report_type='FINAL_DIAGNOSIS',
             status='CONCLUSIVE',
@@ -1036,7 +1094,7 @@ class LangGraphDiagnosticGraph:
             referral=state.get('referral_decision', {}),
             debate_process=state.get('debate_state'),
             falsification_log=falsification_entries,
-            knowledge_graph=state.get('kg_retrieval_result', None),
+            kg_retrieval_result=state.get('kg_retrieval_result', None),
             memory_context=state.get('memory_context'),
             guideline_check=state.get('guideline_check_result'),
             hitl_questions=state.get('hitl_questions', []),
@@ -1044,6 +1102,7 @@ class LangGraphDiagnosticGraph:
             excluded_hypotheses=state.get('excluded_hypotheses', []),
             recommended_tests=triage_result.get('recommended_tests', []),
             data_completeness_score=state.get('data_assessment_result', {}).get('score', 0),
+            clinical_summary=clinical_summary,
         )
 
         return {'final_report': report, 'current_phase': 'mdt_final_report'}
@@ -1073,10 +1132,11 @@ class LangGraphDiagnosticGraph:
             referral_decision={},
             final_report={},
             kg_retrieval_result=None,
-            kg_activation_results=[],
             kg_degradation_level=0,
+            kg_rare_disease_signal=None,
             current_phase='init',
             retry_count=0,
+            debate_round=0,
             errors=[],
         )
     
@@ -1114,14 +1174,33 @@ class LangGraphDiagnosticGraph:
         return results
     
     async def _run_single_agent(self, name: str, agent: Any, state: DiagnosticState) -> Optional[Dict]:
-        """运行单个 Agent"""
+        """运行单个 Agent (支持KG上下文注入)"""
         try:
+            context = {
+                'memory': state.get('memory_context', {}),
+                'longitudinal_summary': state.get('memory_context', {}).get('longitudinal_summary', ''),
+            }
+
+            kg_retrieval_result = state.get('kg_retrieval_result')
+            if kg_retrieval_result and isinstance(kg_retrieval_result, dict):
+                kg_candidates = [
+                    d.get('name', '') for d in kg_retrieval_result.get('candidate_diseases', []) if d.get('name')
+                ]
+                kg_matched_features = [
+                    e.get('name', '') for e in kg_retrieval_result.get('relevant_entities', []) if e.get('name')
+                ]
+                kg_differentials = [
+                    dd.get('disease_pair', '') for dd in kg_retrieval_result.get('diagnostic_differences', []) if dd.get('disease_pair')
+                ]
+                context['kg_context'] = {
+                    'candidates': kg_candidates,
+                    'matched_features': kg_matched_features,
+                    'differentials': kg_differentials,
+                }
+
             input_data = {
                 'patient_data': state['patient_data'],
-                'context': {
-                    'memory': state.get('memory_context', {}),
-                    'longitudinal_summary': state.get('memory_context', {}).get('longitudinal_summary', ''),
-                },
+                'context': context,
             }
             result = await agent.execute(input_data)
             if result.success:
@@ -1165,16 +1244,104 @@ class LangGraphDiagnosticGraph:
                 logger.debug(f"Node '{node_name}' completed")
             final_state = event
         
+        result = None
         if final_state:
             last_event = final_state
             for key in reversed(list(last_event.keys())):
                 if last_event[key].get('final_report'):
-                    return last_event[key]['final_report']
+                    result = last_event[key]['final_report']
+                    break
         
-        return compiled.get_state(config=run_config).values.get('final_report', {
-            'status': 'completed',
-            'message': '诊断流程完成',
-        })
+        if result is None:
+            state_values = compiled.get_state(config=run_config).values
+
+            if state_values.get('hitl_status') == 'interrupted':
+                logger.info("HITL 中断：从 state 构造 MDT 中间报告")
+                triage_result = state_values.get('triage_result') or {}
+                hypotheses = state_values.get('hypotheses', [])
+                sorted_hyp = sorted(hypotheses, key=lambda x: x.get('confidence', 0), reverse=True) if hypotheses else []
+
+                falsification_log = state_values.get('falsification_log', [])
+                falsification_entries = []
+                for e in falsification_log:
+                    entry = {
+                        'hypothesis': e.get('hypothesis', '') if isinstance(e, dict) else getattr(e, 'hypothesis', ''),
+                        'falsified': e.get('falsified', False) if isinstance(e, dict) else getattr(e, 'falsified', False),
+                        'contradiction_score': e.get('contradiction_score', 0) if isinstance(e, dict) else getattr(e, 'contradiction_score', 0),
+                        'contradicting_evidence': e.get('contradicting_evidence', []) if isinstance(e, dict) else getattr(e, 'contradicting_evidence', []),
+                        'recommendation': e.get('recommendation', '') if isinstance(e, dict) else getattr(e, 'recommendation', ''),
+                    }
+                    falsification_entries.append(entry)
+
+                hitl_questions = state_values.get('hitl_questions') or []
+                serialized_questions = []
+                for q in hitl_questions:
+                    sq = {
+                        'field': q.get('field', '') if isinstance(q, dict) else getattr(q, 'field', ''),
+                        'question': q.get('question', '') if isinstance(q, dict) else getattr(q, 'question', ''),
+                        'rationale': q.get('rationale', '') if isinstance(q, dict) else getattr(q, 'rationale', ''),
+                        'priority': q.get('priority', 'medium') if isinstance(q, dict) else getattr(q, 'priority', 'medium'),
+                        'related_disease': q.get('related_disease', '') if isinstance(q, dict) else getattr(q, 'related_disease', ''),
+                        'recommended_test': q.get('recommended_test', '') if isinstance(q, dict) else getattr(q, 'recommended_test', ''),
+                    }
+                    serialized_questions.append(sq)
+
+                clinical_summary = None
+                if sorted_hyp:
+                    top = sorted_hyp[0]
+                    debate = state_values.get('debate_state') or {}
+                    consensus = debate.get('consensus_points', [])
+                    disagreements = debate.get('disagreements', [])
+                    clinical_summary = (
+                        f"MDT多专科会诊结论：首要诊断考虑{top.get('disease', '未知')}（置信度{top.get('confidence', 0):.0%}）。"
+                        f"支持证据：{'；'.join(top.get('supporting_evidence', [])[:3])}。"
+                    )
+                    if consensus:
+                        clinical_summary += f"共识点：{'；'.join(consensus[:3])}。"
+                    if disagreements:
+                        clinical_summary += f"分歧点：{'；'.join(disagreements[:3])}。"
+                    if hitl_questions:
+                        clinical_summary += f"尚需补充{len(hitl_questions)}项关键检查数据以明确诊断。"
+
+                result = {
+                    'status': 'interrupted',
+                    'report_type': 'FINAL_DIAGNOSIS',
+                    'report_version': 'hitl_interrupted_v1',
+                    'patient_id': (state_values.get('patient_data') or {}).get('patient_id', 'UNKNOWN'),
+                    'path': triage_result.get('path', 'rare'),
+                    'diagnosis': sorted_hyp[0] if sorted_hyp else None,
+                    'confidence': sorted_hyp[0].get('confidence', 0) if sorted_hyp else 0,
+                    'confidence_level': sorted_hyp[0].get('confidence_level', 'medium') if sorted_hyp else 'medium',
+                    'is_rare_disease_alert': triage_result.get('is_rare_disease_alert', True),
+                    'urgency': triage_result.get('urgency', 'routine'),
+                    'differential_diagnosis': sorted_hyp[:5],
+                    'triage': triage_result,
+                    'referral': state_values.get('referral_decision') or {},
+                    'debate_process': state_values.get('debate_state'),
+                    'falsification_log': falsification_entries,
+                    'kg_retrieval_result': state_values.get('kg_retrieval_result'),
+                    'memory_context': state_values.get('memory_context'),
+                    'guideline_check': state_values.get('guideline_check_result'),
+                    'hitl_questions': serialized_questions,
+                    'hitl_status': 'interrupted',
+                    'excluded_hypotheses': state_values.get('excluded_hypotheses', []),
+                    'recommended_tests': triage_result.get('recommended_tests', []),
+                    'data_completeness_score': (state_values.get('data_assessment_result') or {}).get('score', 0),
+                    'clinical_summary': clinical_summary,
+                }
+            else:
+                result = state_values.get('final_report', {
+                    'status': 'completed',
+                    'message': '诊断流程完成',
+                })
+        
+        if self.kg_interface:
+            try:
+                self.kg_interface.close()
+            except Exception as e:
+                logger.warning(f"KG interface close failed: {e}")
+        
+        return result
     
     async def resume_from_hitl(
         self,

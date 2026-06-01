@@ -160,7 +160,7 @@ export interface MDTFinalReport extends ReportBase {
   referral: Record<string, any>         // 转诊决策
   debate_process?: DebateState | null   // 辩论过程
   falsification_log: any[]              // 证伪日志
-  knowledge_graph: Record<string, number>  // 知识图谱权重
+  kg_retrieval_result: Record<string, number>  // 知识图谱权重
   memory_context?: Record<string, any> | null  // 记忆上下文
   guideline_check?: GuidelineCheckResult | null  // 指南校验
   hitl_questions: any[]                 // HITL问题列表

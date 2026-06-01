@@ -4,7 +4,7 @@
 专注于肝脏疾病的诊断与鉴别，具有肝病专科的认知视角和诊断偏误。
 """
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from agents.base_agent import BaseAgent, AgentConfig, AgentResponse
 
 
@@ -25,17 +25,21 @@ class HepatologistAgent(BaseAgent):
     def name(self) -> str:
         return "HepatologistAgent"
     
-    async def execute(self, input_data: Dict[str, Any]) -> AgentResponse:
+    async def execute(self, input_data: Dict[str, Any], kg_context: Optional[Dict] = None) -> AgentResponse:
         """
         执行肝病专科分析
         
         Args:
             input_data: 包含 patient_data 和 context 的字典
+            kg_context: 知识图谱上下文 (candidates, matched_features, differentials)
             
         Returns:
             AgentResponse: 包含肝病专科诊断观点
         """
         patient_data = input_data.get('patient_data', {})
+        context = input_data.get('context', {})
+        if kg_context is None:
+            kg_context = context.get('kg_context')
         
         # 提取肝病相关指标
         labs = patient_data.get('labs', {})
@@ -45,6 +49,11 @@ class HepatologistAgent(BaseAgent):
         # 肝病专科分析逻辑
         findings = []
         differential_diagnosis = []
+        
+        if kg_context and kg_context.get('candidates'):
+            findings.append(f"KG候选疾病参考: {', '.join(kg_context['candidates'])}")
+        if kg_context and kg_context.get('matched_features'):
+            findings.append(f"KG匹配特征参考: {', '.join(kg_context['matched_features'])}")
         
         # 分析肝功能指标
         alt = labs.get('ALT', labs.get('Alt'))

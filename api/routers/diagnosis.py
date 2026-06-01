@@ -38,9 +38,22 @@ async def diagnose(patient_input: PatientInput):
     result = await orchestrator.run_full_pipeline(patient_data, config=config)
 
     if result.get('status') == 'interrupted':
+        triage_result = result.get('triage', {})
+        path_mapping = {
+            'common': 'common_fast_path',
+            'rare': 'rare_deep_path',
+            'uncertain': 'uncertain_fallback',
+            'insufficient_data': 'uncertain_fallback',
+        }
+        short_path = result.get('path', 'unknown')
+        triage_path = path_mapping.get(short_path, short_path)
+        if isinstance(triage_result, dict) and triage_result.get('path'):
+            triage_path = triage_result['path']
+
         return DiagnosisResponse(
             success=True,
             patient_id=patient_input.patient_id,
+            chief_complaint=patient_input.chief_complaint,
             hitl_status='interrupted',
             hitl_session_id=config['thread_id'],
             hitl_questions=[
@@ -49,11 +62,34 @@ async def diagnose(patient_input: PatientInput):
                     'question': q.get('question', ''),
                     'rationale': q.get('rationale', ''),
                     'priority': q.get('priority', 'medium'),
+                    'related_disease': q.get('related_disease', ''),
+                    'recommended_test': q.get('recommended_test', ''),
                 }
                 for q in result.get('hitl_questions', [])
             ],
-            partial_diagnosis=result.get('partial_diagnosis', []),
+            partial_diagnosis=result.get('differential_diagnosis', []),
+            primary_diagnosis=result.get('diagnosis'),
+            differential_diagnosis=result.get('differential_diagnosis', [])[:5],
+            confidence_score=result.get('confidence', 0),
+            referral_recommendation=result.get('referral'),
             evidence_chain=[],
+            metadata={
+                'data_completeness': result.get('data_completeness_score', 0),
+                'triage_path': triage_path,
+                'mode': 'full_pipeline',
+                'version': result.get('report_version', 'hitl_interrupted_v1'),
+                'is_rare_disease_alert': result.get('is_rare_disease_alert', True),
+                'kg_retrieval_result': result.get('kg_retrieval_result', {}),
+                'memory_context': result.get('memory_context'),
+                'excluded_hypotheses': result.get('excluded_hypotheses', []),
+                'report_type': result.get('report_type', 'FINAL_DIAGNOSIS'),
+            },
+            debate_process=result.get('debate_process'),
+            falsification_log=result.get('falsification_log', []),
+            guideline_check=result.get('guideline_check'),
+            triage=triage_result,
+            recommended_tests=result.get('recommended_tests', []),
+            clinical_summary=result.get('clinical_summary'),
         )
 
     top_diag = result.get('diagnosis') or {}
@@ -79,7 +115,7 @@ async def diagnose(patient_input: PatientInput):
     triage_path = path_mapping.get(short_path, short_path)
 
     # 如果 triage 子对象中有完整路径，优先使用
-    triage_obj = result.get('triage_result', {})
+    triage_obj = result.get('triage', {}) or result.get('triage_result', {})
     if isinstance(triage_obj, dict) and triage_obj.get('path'):
         triage_path = triage_obj['path']
 
@@ -103,7 +139,7 @@ async def diagnose(patient_input: PatientInput):
             'mode': 'full_pipeline',
             'version': result.get('report_version', 'mdt_v1'),
             'is_rare_disease_alert': result.get('is_rare_disease_alert', False),
-            'knowledge_graph': result.get('knowledge_graph', {}),
+            'kg_retrieval_result': result.get('kg_retrieval_result', {}),
             'memory_context': result.get('memory_context'),
             'excluded_hypotheses': result.get('excluded_hypotheses', []),
             'report_type': result.get('report_type', 'FINAL_DIAGNOSIS'),

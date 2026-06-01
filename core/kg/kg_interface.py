@@ -87,6 +87,33 @@ class KGInterface:
             result = session.run(query, params or {})
             return [record.data() for record in result]
 
+    def query_criteria_for_diagnosis(self, diagnosis: str) -> List[Dict]:
+        query = """
+        MATCH (f:Feature)-[r:HAS_DIAGNOSTIC_KEY|HAS_MANIFESTATION]->(d:Disease)
+        WHERE d.name = $diagnosis OR d.id = $diagnosis
+        RETURN f.name AS name, f.layer AS layer, f.category AS category,
+               f.is_core AS is_core, type(r) AS rel_type,
+               f.description AS description
+        """
+        try:
+            return self._run_neo4j_query(query, {"diagnosis": diagnosis})
+        except Exception as e:
+            logger.warning(f"query_criteria_for_diagnosis failed: {e}")
+            return []
+
+    def query_feature_details(self, feature_name: str) -> List[Dict]:
+        query = """
+        MATCH (f:Feature)
+        WHERE f.name = $name OR f.id = $name
+        RETURN f.name AS name, f.layer AS layer, f.category AS category,
+               f.is_core AS is_core, f.description AS description
+        """
+        try:
+            return self._run_neo4j_query(query, {"name": feature_name})
+        except Exception as e:
+            logger.warning(f"query_feature_details failed: {e}")
+            return []
+
     def is_enabled(self) -> bool:
         return self.config.enabled
 

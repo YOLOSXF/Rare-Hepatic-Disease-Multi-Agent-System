@@ -27,7 +27,7 @@ Stage 3: 投票排序 → Stage 4: 差异KG + 指南溯源
 
 import time
 from collections import defaultdict
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from loguru import logger
 
@@ -88,14 +88,14 @@ class KGRetriever:
 
         logger.info(f"KGRetriever: extracted {len(queries)} queries")
 
-        matched_entities = self._vector_search(
+        matched_entities, guideline_chunks = self._vector_search(
             queries, top_k=self.config.retrieval.vector_top_k
         )
         if not matched_entities:
             logger.warning("KGRetriever: vector search returned no results")
             return KGRetrievalResult(retrieval_latency_ms=0.0)
 
-        logger.info(f"KGRetriever: vector search returned {len(matched_entities)} entities")
+        logger.info(f"KGRetriever: vector search returned {len(matched_entities)} KG entities, {len(guideline_chunks)} guideline chunks")
 
         kg_entity_ids = [
             e.get("entity_name", "")
@@ -116,7 +116,7 @@ class KGRetriever:
         logger.info(f"KGRetriever: vote and rank produced {len(candidates)} candidates")
 
         differentials = self._fetch_differentials(candidates)
-        citations = self._fetch_citations(candidates)
+        citations = self._fetch_citations(candidates, guideline_chunks)
 
         relevant_entities = self._build_relevant_entities(matched_entities)
         relevant_relations = self._build_relevant_relations(expanded_relations)
@@ -216,7 +216,7 @@ class KGRetriever:
         queries = [q.strip() for q in queries if q and str(q).strip()]
         return queries
 
-    def _vector_search(self, queries: List[str], top_k: int = 20) -> List[Dict]:
+    def _vector_search(self, queries: List[str], top_k: int = 20) -> Tuple[List[Dict], List[Dict]]:
         embedder = self._get_embedder()
         all_results = []
         seen_names = set()
@@ -239,14 +239,13 @@ class KGRetriever:
             except Exception as e:
                 logger.warning(f"Vector search failed for query '{query[:50]}': {e}")
 
-        kg_entities = [r for r in all_results if r.get("entity_type") in ("Feature", "Disease", "LabTest", "Gene", "Phenotype")]
-        other_entities = [r for r in all_results if r.get("entity_type") not in ("Feature", "Disease", "LabTest", "Gene", "Phenotype")]
+        kg_entity_types = ("Feature", "Disease", "LabTest", "Gene", "Phenotype")
+        kg_entities = [r for r in all_results if r.get("entity_type") in kg_entity_types]
+        guideline_chunks = [r for r in all_results if r.get("entity_type") == "GuidelineChunk"]
 
         kg_entities.sort(key=lambda x: x.get("similarity", 0.0), reverse=True)
-        other_entities.sort(key=lambda x: x.get("similarity", 0.0), reverse=True)
 
-        combined = kg_entities + other_entities
-        return combined[:top_k]
+        return kg_entities[:top_k], guideline_chunks
 
     def _graph_expand(self, entity_ids: List[str]) -> List[Dict]:
         if not entity_ids:
@@ -416,6 +415,7 @@ class KGRetriever:
 
     def _fetch_citations(
         self, candidates: List[CandidateDisease],
+        guideline_chunks: List[Dict],
     ) -> List[SourceCitation]:
         if not candidates:
             return []
@@ -433,6 +433,12 @@ class KGRetriever:
             logger.warning(f"Fetch citations failed: {e}")
             return []
 
+        chunk_by_guideline: Dict[str, List[Dict]] = defaultdict(list)
+        for gc in guideline_chunks:
+            src = gc.get("source_guideline", "")
+            if src:
+                chunk_by_guideline[src].append(gc)
+
         citations = []
         seen = set()
         for r in results:
@@ -443,9 +449,17 @@ class KGRetriever:
             org = r.get("organization", "")
             year = r.get("year", "")
             section = f"{org} {year}".strip() if org or year else None
+
+            evidence_text = None
+            matching_chunks = chunk_by_guideline.get(guideline, [])
+            if matching_chunks:
+                matching_chunks.sort(key=lambda x: x.get("similarity", 0.0), reverse=True)
+                evidence_text = matching_chunks[0].get("description", "")
+
             citations.append(SourceCitation(
                 guideline=guideline,
                 section=section,
+                evidence_text=evidence_text,
             ))
         return citations
 
