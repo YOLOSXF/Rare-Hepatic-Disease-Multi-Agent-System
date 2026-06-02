@@ -428,32 +428,6 @@ class LangGraphDiagnosticGraph:
                 'current_phase': 'triage',
             }
 
-        # KG罕见病信号注入
-        if self.kg_interface and self.kg_interface.is_enabled():
-            try:
-                patient_data = state['patient_data']
-                retrieval_result, activation_results = self.kg_interface.retrieve_and_classify(
-                    patient_data, triage_hint=None
-                )
-                if activation_results:
-                    top_activation = activation_results[0]
-                    activation_score = top_activation.activation_score
-                    current_path = result['triage_result']['path']
-                    if activation_score > 0.3 and current_path != 'rare_deep_path':
-                        logger.warning(
-                            f"KG罕见病信号: 顶级候选 '{top_activation.disease_name}' "
-                            f"激活分数={activation_score:.3f} 超过阈值0.3, "
-                            f"当前分诊路径={current_path}"
-                        )
-                        result['kg_rare_disease_signal'] = activation_score
-                    else:
-                        logger.info(
-                            f"KG分诊辅助: 顶级候选 '{top_activation.disease_name}' "
-                            f"激活分数={activation_score:.3f}"
-                        )
-            except Exception as e:
-                logger.warning(f"KG罕见病信号注入失败: {e}")
-
         return result
     
     async def _node_common_fast_path(self, state: DiagnosticState) -> Dict[str, Any]:
@@ -1133,7 +1107,6 @@ class LangGraphDiagnosticGraph:
             final_report={},
             kg_retrieval_result=None,
             kg_degradation_level=0,
-            kg_rare_disease_signal=None,
             current_phase='init',
             retry_count=0,
             debate_round=0,

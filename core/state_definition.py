@@ -266,7 +266,6 @@ class DiagnosticState(TypedDict):
     # ===== 知识图谱集成 =====
     kg_retrieval_result: Optional[Dict[str, Any]]
     kg_degradation_level: int
-    kg_rare_disease_signal: Optional[float]
     
     # ===== 流程控制 =====
     current_phase: str
